@@ -1729,7 +1729,11 @@ async function downloadNew(start = 0, end = _fragments.length) {
         }
     });
     if (fileStream) {
+        let moofSeq = 1;
         down.on('sequentialPush', function (buffer) {
+            if (down.findPipeline('transcode')) {
+                moofSeq = fixMoofSequence(buffer, moofSeq);
+            }
             fileStream && fileStream.write(new Uint8Array(buffer));
         });
     }
@@ -1848,6 +1852,12 @@ function addInitSegmentData(buffer, initSegment) {
 // 合并下载
 function mergeTsNew(down) {
     $progress.html(i18n.merging);
+
+    // 按切片顺序重写 moof 序号
+    if (down.findPipeline('transcode')) {
+        let moofSeq = 1;
+        down.buffer.forEach(buffer => { moofSeq = fixMoofSequence(buffer, moofSeq); });
+    }
 
     // 创建Blob
     const fileBlob = new Blob(down.buffer, { type: down.findPipeline('transcode') ? "video/mp4" : "video/MP2T" });
@@ -2314,6 +2324,31 @@ function StringToUint8Array(str) {
     str = str.replace("0x", "");
     return new Uint8Array(HexStringToArrayBuffer(str));
 }
+/**
+ * 修正 moof 序号
+ * mux.js 每个轨道各自从0计数 序号重复 QuickTime(AVFoundation) 只能读到第一个分片
+ * 序号必须从1开始连续递增 所以只能在按顺序输出时处理
+ * @param {ArrayBuffer} buffer 转码后的切片数据 原地修改
+ * @param {number} seq 起始序号
+ * @returns {number} 下一个序号
+ */
+function fixMoofSequence(buffer, seq) {
+    const view = new DataView(buffer);
+    let offset = 0;
+    while (offset + 8 <= view.byteLength) {
+        let size = view.getUint32(offset);
+        if (size == 1 && offset + 16 <= view.byteLength) {
+            size = Number(view.getBigUint64(offset + 8));
+        }
+        if (size < 8) { break; }
+        // moof 第一个子box为 mfhd 序号位于 moof 起始偏移20
+        if (view.getUint32(offset + 4) == 0x6D6F6F66 && offset + 24 <= view.byteLength && view.getUint32(offset + 12) == 0x6D666864) {
+            view.setUint32(offset + 20, seq++);
+        }
+        offset += size;
+    }
+    return seq;
+}
 /* 修正mp4文件显示时长 */
 function fixFileDuration(data, duration) {
     // duration = parseInt(duration);
@@ -2351,8 +2386,10 @@ function fixFileDuration(data, duration) {
             continue;
         }
         // mdhd
+        // 分片mp4的 mdhd 只描述 moov 内的样本(为空) 必须为0
+        // 写入总时长会让 QuickTime(AVFoundation) 把分片接在这段时长之后 时长翻倍且画面错位
         if (data[i] == 0x6D && data[i + 1] == 0x64 && data[i + 2] == 0x68 && data[i + 3] == 0x64) {
-            let mdhdBoxDuration = getBoxDuration(data, duration, i);   // 获得 timescale
+            const mdhdBoxDuration = 0;
             i += 20;    // mdhd 偏移20 为duration
             data[i] = (mdhdBoxDuration & 0xFF000000) >> 24;
             data[++i] = (mdhdBoxDuration & 0xFF0000) >> 16;
