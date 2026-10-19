@@ -135,11 +135,11 @@ G.OptionLists = {
 
     // m3u8解析器默认参数
     M3u8Thread: 6,
-    M3u8Mp4: false,
+    M3u8Mp4: true,
     M3u8OnlyAudio: false,
     M3u8SkipDecrypt: false,
-    M3u8StreamSaver: false,
-    M3u8Ffmpeg: true,
+    M3u8StreamSaver: true,
+    M3u8Ffmpeg: false,
     M3u8AutoClose: false,
 
     // 第三方服务地址

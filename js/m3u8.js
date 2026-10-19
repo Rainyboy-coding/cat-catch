@@ -1245,6 +1245,12 @@ $("#mergeTs").click(async function () {
     }
     skipDecrypt = $("#skipDecrypt").prop("checked");    // 是否跳过解密
 
+    // 大文件无法使用在线ffmpeg 会回退输出ts 改用内置mp4转码
+    if (!G.isFirefox && $("#ffmpeg").prop("checked") && !_ffmpeg && !isSendFfmpeg && estimateFileSize > G.chromeLimitSize) {
+        $("#ffmpeg").prop("checked", false);
+        $("#mp4").prop("checked", true);
+        downSet.mp4 = true;
+    }
     // 估算检查文件大小
     if (!$("#StreamSaver").prop("checked") && estimateFileSize > G.chromeLimitSize && confirm(i18n("fileTooLargeStream", ["2G"]))) {
         $("#StreamSaver").prop("checked", true);
@@ -1649,8 +1655,12 @@ async function downloadNew(start = 0, end = _fragments.length) {
         });
         down.use(async function (buffer, fragment) {
             head = fragment.index == 0;
+            tempBuffer = null;  // 避免转码无输出时 重复写入上一个切片的数据
             transmuxer.push(new Uint8Array(buffer));
             transmuxer.flush();
+            if (!tempBuffer) {
+                console.warn("mp4 transcode produced no output, fragment", fragment.index);
+            }
             return tempBuffer ? tempBuffer.buffer : buffer;
         }, 'transcode');
     }
