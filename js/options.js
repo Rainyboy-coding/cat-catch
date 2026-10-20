@@ -15,7 +15,6 @@ chrome.storage.sync.get(G.OptionLists, function (items) {
     if (G.isMobile) {
         $(`<link rel="stylesheet" type="text/css" href="css/mobile.css">`).appendTo("head");
     }
-    $(`<style>${items.css}</style>`).appendTo("head");
     const $extList = $("#extList");
     for (let key in items.Ext) {
         if (items.Ext[key].operator === undefined) {
@@ -68,21 +67,6 @@ $("#blockAddUrl").bind("click", function () {
     $("#blockUrlList [name=url]").last().focus();
 });
 $("#version").html(i18n.catCatch + " v" + chrome.runtime.getManifest().version);
-
-// 自定义播放调用模板
-playerList = new Map();
-playerList.set("tips", { name: i18n.invokeProtocolTemplate, template: "" });
-playerList.set("default", { name: i18n.default + " / " + i18n.disable, template: "" });
-playerList.set("potplayer", { name: "PotPlayer", template: "potplayer://${url} ${referer|exists:'/referer=\"*\"'}" });
-playerList.set("potplayerFix", { name: "PotPlayerFix", template: "potplayer:${url} ${referer|exists:'/referer=\"*\"'}" });
-playerList.set("mxPlayerAd", { name: "Android MX Player Free", template: "intent:${url}#Intent;package=com.mxtech.videoplayer.ad;end" });
-playerList.set("mxPlayerPro", { name: "Android MX Player Pro", template: "intent:${url}#Intent;package=com.mxtech.videoplayer.pro;end" });
-playerList.set("vlc", { name: "Android vlc", template: "intent:${url}#Intent;package=org.videolan.vlc;end" });
-playerList.set("vlcCustom", { name: i18n.customVLCProtocol + " vlc://", template: "vlc://${url}" });
-playerList.set("shareApi", { name: i18n.systemShare, template: "${shareApi}" });
-playerList.forEach(function (item, key) {
-    $("#PlayerTemplate").append(`<option value="${key}">${item.name}</option>`);
-});
 
 // 增加后缀 类型 正则表达式
 function Gethtml(Type, Param = new Object()) {
@@ -153,15 +137,6 @@ function Gethtml(Type, Param = new Object()) {
     }
     return html;
 }
-// 预览模板
-$("#PlayerTemplate").change(function () {
-    const Value = $(this).val();
-    if (this.id == "PlayerTemplate" && playerList.has(Value) && Value != "tips") {
-        const template = playerList.get(Value).template;
-        $("#Player").val(template);
-        chrome.storage.sync.set({ Player: template });
-    }
-});
 //失去焦点 保存自动清理数 模拟手机User Agent 自定义播放调用模板
 let debounce2 = undefined;
 $("[save='input']").on("input", function () {
@@ -203,26 +178,6 @@ $("#allDisable, #allEnable").bind("click", function () {
         $(this).prop("checked", state);
     });
     Save(obj);
-});
-// m3u8dlArg 输出测试
-function testTag() {
-    const data = {
-        url: $("#url").val(),
-        requestHeaders: { referer: $("#referer").val() },
-        initiator: $("#initiator").val(),
-        webUrl: $("#webUrl").val(),
-        title: $("#title").val(),
-    }
-    const result = templates($("#testTextarea").val() ?? "", data);
-    const m3u8dl = 'm3u8dl:' + (G.m3u8dl == 1 ? Base64.encode(result) : result);
-    $("#tagTestResult").html(`${result}<br><br><a href="${m3u8dl}" class="test_url">${m3u8dl}</a>`);
-}
-$("#showTestTag").bind("click", function () {
-    testTag();
-    $("#testTag").slideToggle();
-});
-$("#testTag input, #testTextarea").on("input", function () {
-    testTag();
 });
 //重置后缀 重置类型 重置正则
 $("[data-reset]").bind("click", function () {
@@ -298,50 +253,6 @@ $("#testRegex, #testUrl").keyup(function () {
         }
     }
 });
-//导出配置
-$("#exportOptions").bind("click", function () {
-    chrome.storage.sync.get(null, function (items) {
-        let ExportData = JSON.stringify(items);
-        ExportData = "data:text/plain," + Base64.encode(ExportData);
-        let date = new Date();
-        const filename = `cat-catch-${chrome.runtime.getManifest().version}-${date.getFullYear()}${appendZero(date.getMonth() + 1)}${appendZero(date.getDate())}T${appendZero(date.getHours())}${appendZero(date.getMinutes())}.txt`;
-        if (G.isFirefox) {
-            downloadDataURL(ExportData, filename);
-            return;
-        }
-        chrome.downloads.download({
-            url: ExportData,
-            filename: filename
-        });
-    });
-});
-//导入配置
-$("#importOptionsFile").change(function () {
-    const fileReader = new FileReader();
-    fileReader.onload = function () {
-        let importData = this.result;
-        try {
-            importData = JSON.parse(importData);
-        } catch (e) {
-            importData = Base64.decode(importData);
-            importData = JSON.parse(importData);
-        }
-        const keys = Object.keys(G.OptionLists);
-        for (let item in G.OptionLists) {
-            if (keys.includes(item) && importData[item] !== undefined) {
-                chrome.storage.sync.set({ [item]: importData[item] });
-            }
-        }
-        alert(i18n.alertimport);
-        location.reload();
-    }
-    const file = $("#importOptionsFile").prop('files')[0];
-    fileReader.readAsText(file);
-});
-$("#importOptions").bind("click", function () {
-    $("#importOptionsFile").click();
-});
-
 function SaveGetVal(Obj) {
     let text = Obj.find("[name=text]").val()?.trim();
     let size = Obj.find("[name=size]").val()?.trim();

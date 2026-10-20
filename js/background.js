@@ -63,7 +63,6 @@ chrome.alarms.onAlarm.addListener(function (alarm) {
 // 保存requestHeaders
 chrome.webRequest.onSendHeaders.addListener(
     function (data) {
-        if (G && G.initSyncComplete && !G.enable) { return; }
         if (data.requestHeaders) {
             G.requestHeaders.set(data.requestId, data.requestHeaders);
             data.allRequestHeaders = data.requestHeaders;
@@ -113,7 +112,7 @@ function findMedia(data, isRegex = false, filter = false, timer = false) {
      * OPTIONS 请求不处理
      */
     const blockUrlFlag = data.tabId && data.tabId > 0 && G.blockUrlSet.has(data.tabId);
-    if (!G.enable || (G.blockUrlWhite ? !blockUrlFlag : blockUrlFlag) || data?.method == "OPTIONS") {
+    if ((G.blockUrlWhite ? !blockUrlFlag : blockUrlFlag) || data?.method == "OPTIONS") {
         return;
     }
 
@@ -274,30 +273,10 @@ function findMedia(data, isRegex = false, filter = false, timer = false) {
             G.blackList.delete(data.requestId);
             return;
         }
-        // 发送到popup 并检查自动下载
+        // 发送到popup
         chrome.runtime.sendMessage({ Message: "popupAddData", data: info }, function () {
-            if (G.featAutoDownTabId.size > 0 && G.featAutoDownTabId.has(info.tabId) && chrome.downloads?.State) {
-                try {
-                    const downDir = info.title == "NULL" ? "CatCatch/" : stringModify(info.title) + "/";
-                    let fileName = isEmpty(info.name) ? stringModify(info.title) + '.' + info.ext : decodeURIComponent(stringModify(info.name));
-                    if (G.TitleName) {
-                        fileName = filterFileName(templates(G.downFileName, info));
-                    } else {
-                        fileName = downDir + fileName;
-                    }
-                    chrome.downloads.download({
-                        url: info.url,
-                        filename: fileName
-                    });
-                } catch (e) { return; }
-            }
             if (chrome.runtime.lastError) { return; }
         });
-
-        // 数据发送
-        if (G.send2local) {
-            try { send2local("catch", { ...info, requestHeaders: data.allRequestHeaders }, info.tabId); } catch (e) { console.log(e); }
-        }
 
         // 储存数据
         cacheData[info.tabId] ??= [];
@@ -369,14 +348,6 @@ chrome.runtime.onMessage.addListener(function (Message, sender, sendResponse) {
         sendResponse("ok");
         return true;
     }
-    // 启用/禁用扩展
-    if (Message.Message == "enable") {
-        G.enable = !G.enable;
-        chrome.storage.sync.set({ enable: G.enable });
-        chrome.action.setIcon({ path: G.enable ? "/img/icon.png" : "/img/icon-disable.png" });
-        sendResponse(G.enable);
-        return true;
-    }
     /**
      * 提供requestId数组 获取指定的数据
      */
@@ -407,13 +378,11 @@ chrome.runtime.onMessage.addListener(function (Message, sender, sendResponse) {
     }
     /**
      * 获取各按钮状态
-     * 模拟手机 自动下载 启用 以及各种脚本状态
+     * 模拟手机 以及各种脚本状态
      */
     if (Message.Message == "getButtonState") {
         let state = {
             MobileUserAgent: G.featMobileTabId.has(Message.tabId),
-            AutoDown: G.featAutoDownTabId.has(Message.tabId),
-            enable: G.enable,
         }
         G.scriptList.forEach(function (item, key) {
             state[item.key] = item.tabId.has(Message.tabId);
@@ -425,17 +394,6 @@ chrome.runtime.onMessage.addListener(function (Message, sender, sendResponse) {
     if (Message.Message == "mobileUserAgent") {
         mobileUserAgent(Message.tabId, !G.featMobileTabId.has(Message.tabId));
         chrome.tabs.reload(Message.tabId, { bypassCache: true });
-        sendResponse("ok");
-        return true;
-    }
-    // 对tabId的标签 开启 关闭 自动下载
-    if (Message.Message == "autoDown") {
-        if (G.featAutoDownTabId.has(Message.tabId)) {
-            G.featAutoDownTabId.delete(Message.tabId);
-        } else {
-            G.featAutoDownTabId.add(Message.tabId);
-        }
-        (chrome.storage.session ?? chrome.storage.local).set({ featAutoDownTabId: Array.from(G.featAutoDownTabId) });
         sendResponse("ok");
         return true;
     }
@@ -559,12 +517,6 @@ chrome.runtime.onMessage.addListener(function (Message, sender, sendResponse) {
         sendResponse("ok");
         return true;
     }
-    // 发送数据到本地
-    if (Message.Message == "send2local" && G.send2local) {
-        try { send2local(Message.action, Message.data, Message.tabId); } catch (e) { console.log(e); }
-        sendResponse("ok");
-        return true;
-    }
     if (Message.Message == "damnUrlHas") {
         sendResponse(G.damnUrlSet.has(Message.tabId));
         return true;
@@ -580,24 +532,6 @@ chrome.runtime.onMessage.addListener(function (Message, sender, sendResponse) {
             scriptTabid.delete(Message.tabId);
         }
         sendResponse("ok");
-        return true;
-    }
-});
-
-/**
- * 监听 外部扩展 message 事件
- */
-chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => {
-    if (request.action === "getData") {
-        if (request.tabId) {
-            sendResponse(cacheData[request.tabId] ?? null);
-            return true;
-        }
-        sendResponse(cacheData);
-        return true;
-    } else if (request.action === "getCurrentTabData") {
-        const tabId = request.tabId ?? G.tabId;
-        sendResponse(cacheData[tabId] ?? null);
         return true;
     }
 });
@@ -752,16 +686,9 @@ chrome.tabs.onRemoved.addListener(function (tabId) {
     }
 });
 
-// 右键菜单 和 快捷键 复用函数
-const runCommands = (command, data) => {
-    if (command == "auto_down") {
-        if (G.featAutoDownTabId.has(G.tabId)) {
-            G.featAutoDownTabId.delete(G.tabId);
-        } else {
-            G.featAutoDownTabId.add(G.tabId);
-        }
-        (chrome.storage.session ?? chrome.storage.local).set({ featAutoDownTabId: Array.from(G.featAutoDownTabId) });
-    } else if (command == "catch") {
+// 快捷键
+const runCommands = (command) => {
+    if (command == "catch") {
         const scriptTabid = G.scriptList.get("catch.js").tabId;
         scriptTabid.has(G.tabId) ? scriptTabid.delete(G.tabId) : scriptTabid.add(G.tabId);
         chrome.tabs.reload(G.tabId, { bypassCache: true });
@@ -772,10 +699,6 @@ const runCommands = (command, data) => {
         (chrome.storage.session ?? chrome.storage.local).set({ MediaData: cacheData });
         clearRedundant();
         SetIcon({ tabId: G.tabId });
-    } else if (command == "enable") {
-        G.enable = !G.enable;
-        chrome.storage.sync.set({ enable: G.enable });
-        chrome.action.setIcon({ path: G.enable ? "/img/icon.png" : "/img/icon-disable.png" });
     } else if (command == "reboot") {
         chrome.runtime.reload();
     } else if (command == "deepSearch") {
@@ -789,40 +712,13 @@ const runCommands = (command, data) => {
         }
         scriptTabid.add(G.tabId);
         chrome.tabs.reload(G.tabId, { bypassCache: true });
-    } else if (command == "preview") {
-        chrome.tabs.create({ url: `preview.html?tabId=${G.tabId}` });
-    } else if (command == "image-save") {
-        chrome.downloads.download({
-            url: data.srcUrl,
-            saveAs: G.saveAs
-        }, () => {
-            chrome.runtime.lastError && console.error(chrome.runtime.lastError);
-            G.downDataImageSave = data;
-        });
     }
 }
-chrome.downloads.onChanged.addListener(function (item) {
-    if (G.catDownload) { delete G.downDataImageSave; return; }
-    const errorList = ["SERVER_BAD_CONTENT", "SERVER_UNAUTHORIZED", "SERVER_FORBIDDEN", "SERVER_UNREACHABLE", "SERVER_CROSS_ORIGIN_REDIRECT", "SERVER_FAILED", "NETWORK_FAILED"];
-    if (item.error && errorList.includes(item.error.current) && G.downDataImageSave) {
-        const data = { requestHeaders: { referer: G.downDataImageSave.pageUrl }, requestId: G.tabId, url: G.downDataImageSave.srcUrl };
-        chrome.tabs.create({ url: `downloader.html?JSON=${JSON.stringify(data)}&autoClose=true`, active: false });
-        delete G.downDataImageSave;
-    }
-});
-
 /**
  * 浏览器 扩展快捷键
  */
 chrome.commands.onCommand.addListener(function (command) {
     runCommands(command);
-});
-
-/**
- * 监听 右键菜单事件
- */
-chrome.contextMenus.onClicked.addListener((info, tab) => {
-    runCommands(info.menuItemId, info);
 });
 
 /**
@@ -1084,16 +980,6 @@ function clearRedundant() {
             }
             mobileFlag && (chrome.storage.session ?? chrome.storage.local).set({ featMobileTabId: Array.from(G.featMobileTabId) });
         });
-        // 清理自动下载
-        let autoDownFlag = false;
-        G.featAutoDownTabId.forEach(function (tabId) {
-            if (!allTabId.has(tabId)) {
-                autoDownFlag = true;
-                G.featAutoDownTabId.delete(tabId);
-            }
-        });
-        autoDownFlag && (chrome.storage.session ?? chrome.storage.local).set({ featAutoDownTabId: Array.from(G.featAutoDownTabId) });
-
         G.blockUrlSet = new Set([...G.blockUrlSet].filter(x => allTabId.has(x)));
         G.damnUrlSet = new Set([...G.damnUrlSet].filter(x => allTabId.has(x)));
 

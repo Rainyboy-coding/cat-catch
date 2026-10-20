@@ -13,14 +13,6 @@ Version: 1.4.1
 Download:
 `https://github.com/videojs/mpd-parser/releases/tag/v1.4.1` -> `mpd-parser.min.js`
 
-lib/jquery.qrcode.min.js
-Source: https://github.com/jeromeetienne/jquery-qrcode
-License: MIT license
-Version: 1.0
-Download:
-https://github.com/jeromeetienne/jquery-qrcode/releases/tag/v1.0
-`Source code` -> `jquery.qrcode.min.js`
-
 lib/jquery.min.js
 Source: https://github.com/jquery/jquery
 License: MIT license
@@ -34,22 +26,6 @@ License: Apache-2.0 license
 Version: 1.6.16
 Download:
 `https://github.com/video-dev/hls.js/releases/tag/v1.6.16` -> `release.zip` -> `dist/hls.min.js`
-
-lib/mqtt.min.js
-Source: https://github.com/mqttjs/MQTT.js
-License: MIT license
-Version: 5.15.2
-Build:
-`https://github.com/mqttjs/MQTT.js/releases/tag/v5.15.2`
-`Source code` -> `npm run build` -> `dist/mqtt.min.js`
-
-lib/jquery.json-viewer.js
-Source: https://github.com/abodelot/jquery.json-viewer
-License: MIT license
-Version: 1.5.0
-Download:
-`https://github.com/abodelot/jquery.json-viewer/releases/tag/v1.5.0`
-`Source code` -> `json-viewer/jquery.json-viewer.js`
 
 lib/StreamSaver.js
 Source: https://github.com/jimmywarting/StreamSaver.js

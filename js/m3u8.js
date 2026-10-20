@@ -64,9 +64,7 @@ setRequestHeaders(requestHeaders, () => {
 
 // 默认设置
 const allOption = {
-    addParam: false,
     fold: !G.isMobile,
-    m3u8dlRE: false,
     M3u8HideDownloadedSegments: true,
 };
 /* m3u8 解析工具 */
@@ -102,7 +100,6 @@ let transmuxer = undefined;
 const $fileSize = $("#fileSize");   // 下载文件大小 进度
 const $progress = $("#progress");   // 下载进度
 const $fileDuration = $("#fileDuration");   // 下载总时长
-const $m3u8dlArg = $("#m3u8dlArg"); // m3u8DL 参数
 const $media_file = $("#media_file");   // 切片列表
 
 /* 框架ffmpeg */
@@ -785,7 +782,6 @@ function parseTs(data) {
     // 范围下载所需数据
     $("#rangeStart").attr("max", _fragments.length);
     $("#rangeEnd").attr("max", _fragments.length).val(_fragments.length);
-    $m3u8dlArg.val(getM3u8DlArg());
 
     if (data.live) {
         autoDown && highlight();
@@ -816,7 +812,6 @@ function parseTs(data) {
                     $("#maybeKey").show();
                     maybeKey.change(function () {
                         $("#customKey").val(this.value != "tips" ? this.value : "");
-                        $m3u8dlArg.val(getM3u8DlArg());
                     });
                 });
             });
@@ -968,25 +963,9 @@ $("#play").click(function () {
     showTab("#mediaList");
 });
 
-// 调用m3u8DL下载
-$("#m3u8DL").click(function () {
-    if (_m3u8Url.startsWith("blob:")) {
-        alert(i18n.blobM3u8DLError);
-        return;
-    }
-    const m3u8dlArg = getM3u8DlArg();
-    $m3u8dlArg.val(m3u8dlArg);
-    navigator.clipboard.writeText(m3u8dlArg);
-    const m3u8dl = 'm3u8dl:' + (G.m3u8dl == 1 ? Base64.encode(m3u8dlArg) : m3u8dlArg);
-    if (m3u8dl.length >= 2046) {
-        alert(i18n.M3U8DLparameterLong);
-    }
-    chrome.tabs.update({ url: m3u8dl });
-});
-
 // 折叠按钮
-const $popupBox = $("#openM3U8DLBox, #openKeyBox, #moreFeaturesBox");
-$("#openM3U8DL, #openKey, #moreFeatures").click(function (e) {
+const $popupBox = $("#openKeyBox, #moreFeaturesBox");
+$("#openKey, #moreFeatures").click(function (e) {
     e.stopPropagation();
     const $box = $(`#${e.target.id}Box`);
     if ($box.is(":visible")) {
@@ -1009,26 +988,6 @@ function hideAllBoxes() {
     $(document).off("click.closeBox");
 }
 
-// 调用自定义协议
-$("#invoke").click(function () {
-    const url = getTemplates(G.invokeText);
-    chrome.tabs.update({ url: url });
-});
-// 显示m3u8DL命令
-$("#setM3u8dl").click(function () {
-    $m3u8dlArg.val(getM3u8DlArg());
-    $m3u8dlArg.slideToggle();
-});
-// 设置载入参数
-$("#addParam").click(function () {
-    $m3u8dlArg.val(getM3u8DlArg());
-});
-$("input").click(function () {
-    $m3u8dlArg.val(getM3u8DlArg());
-});
-$("input").keyup(function () {
-    $m3u8dlArg.val(getM3u8DlArg());
-});
 // 只要音频
 $("#onlyAudio").on("change", function () {
     if (transmuxer) {
@@ -1086,7 +1045,6 @@ $("#rangeStart, #rangeEnd, #thread").on("wheel", function (event) {
         return false;
     }
     $(this).val(number);
-    $m3u8dlArg.val(getM3u8DlArg());
     if (this.id == "thread") {
         clearTimeout(debounce2);
         debounce2 = setTimeout(() => {
@@ -1112,11 +1070,6 @@ $("#rangeStart, #rangeEnd, #thread").keyup(function () {
     }
 });
 
-// 储存设置
-$("#addParam").on("change", function () {
-    allOption.addParam = $("#addParam").prop("checked");
-    chrome.storage.local.set(allOption);
-});
 // 上传key
 $("#uploadKeyFile").change(function () {
     let fileReader = new FileReader();
@@ -1126,7 +1079,6 @@ $("#uploadKeyFile").change(function () {
             return;
         }
         $("#customKey").val(ArrayBufferToBase64(this.result));
-        $m3u8dlArg.val(getM3u8DlArg());
     };
     let file = $("#uploadKeyFile").prop('files')[0];
     fileReader.readAsArrayBuffer(file);
@@ -1210,7 +1162,6 @@ $("#mergeTs").click(async function () {
             }).done(function (responseData) {
                 customKey = responseData;
                 $("#customKey").val(ArrayBufferToBase64(customKey));
-                $m3u8dlArg.val(getM3u8DlArg());
             });
             if (flag) {
                 $progress.html(`<b>${i18n.keyDownloadFailed}</b>`);
@@ -1329,7 +1280,6 @@ $("#rangeConfirm").click(function () {
         $progress.html(`<b>${i18n("sNumMax", [_fragments.length])}</b>`);
         return;
     }
-    $m3u8dlArg.val(getM3u8DlArg());
 
     // 便利ts列表 在不再范围的切片上取消选中状态
     const list = document.querySelector("#mediaList");
@@ -1489,7 +1439,6 @@ $("#searchingForRealKey").click(function () {
                         $("#searchingForRealKey").html(i18n.searchingForRealKey);
                         $("#customKey").val(key);
                         $('#maybeKey select').val(key);
-                        $m3u8dlArg.val(getM3u8DlArg());
                         return;
                     }
                 } catch (error) {
@@ -2076,103 +2025,6 @@ window.onbeforeunload = function (event) {
         event.returnValue = i18n.streamOnbeforeunload;
     }
 }
-function getTemplates(text) {
-    // 也许请求头被更改
-    if (Object.keys(requestHeaders).length) {
-        _data.requestHeaders = { ...requestHeaders };
-        _data.initiator = requestHeaders?.referer ?? _initiator;
-    }
-    return templates(text, _data);
-}
-function getM3u8DlREArg() {
-    let m3u8dlArg = G.m3u8dlArg;
-    const addParam = $("#addParam").prop("checked");    // 是否添加参数
-    const customFilename = $("#customFilename").val().trim();   // 自定义文件名
-    if (customFilename && addParam) {
-        m3u8dlArg = m3u8dlArg.replace(/--save-name "[^"]+"/g, `--save-name "${customFilename}"`);
-    }
-    m3u8dlArg = getTemplates(m3u8dlArg);
-    if (!addParam) { return m3u8dlArg; }
-
-    // 线程处理
-    const tsThread = $("#thread").val();  // 线程数量
-    const threadCountRegex = /(--thread-count\s+)\d+/;
-    if (m3u8dlArg.match(threadCountRegex)) {
-        m3u8dlArg = m3u8dlArg.replace(threadCountRegex, `\$1${tsThread}`);
-    } else {
-        m3u8dlArg += ` --thread-count ${tsThread}`;
-    }
-
-    // 范围处理
-    let rangeStart = $("#rangeStart").val();
-    rangeStart = rangeStart.includes(":") ? rangeStart : rangeStart - 1;
-    let rangeEnd = $("#rangeEnd").val();
-    rangeEnd = rangeEnd.includes(":") ? rangeEnd : rangeEnd - 1;
-    if (rangeStart != 0 || rangeEnd != _fragments.length - 1) {
-        m3u8dlArg += ` --custom-range "${rangeStart}-${rangeEnd}"`
-    }
-
-    // 自定义密钥
-    let customKey = $("#customKey").val().trim();  // 自定义密钥
-    if (customKey) {
-        m3u8dlArg += ` --custom-hls-key "${customKey}"`;
-    }
-
-    // 自定义IV
-    const customIV = $("#customIV").val();  // 自定义IV
-    m3u8dlArg += customIV ? ` --custom-hls-iv "${customIV}"` : "";
-
-    // 只要音频
-    // const onlyAudio = $("#onlyAudio").prop("checked");
-    // m3u8dlArg += onlyAudio ? ` --drop-video all` : "";
-
-    return m3u8dlArg;
-}
-function getM3u8DlArg() {
-    if (G.m3u8dl == 2) { return getM3u8DlREArg(); }
-
-    let m3u8dlArg = G.m3u8dlArg;
-    const addParam = $("#addParam").prop("checked");
-    // 自定义文件名
-    const customFilename = $("#customFilename").val().trim();
-    if (customFilename && addParam) {
-        m3u8dlArg = m3u8dlArg.replace(/--saveName "[^"]+"/g, `--saveName "${customFilename}"`);
-    }
-    m3u8dlArg = getTemplates(m3u8dlArg);
-
-    if (!addParam) { return m3u8dlArg; }
-
-    if (m3u8dlArg.includes("--maxThreads")) {
-        m3u8dlArg = m3u8dlArg.replace(/--maxThreads "?[0-9]+"?/g, "");
-    }
-    const tsThread = $("#thread").val();  // 线程数量
-    m3u8dlArg += ` --maxThreads "${tsThread}"`
-
-    let rangeStart = $("#rangeStart").val();
-    rangeStart = rangeStart.includes(":") ? rangeStart : rangeStart - 1;
-    let rangeEnd = $("#rangeEnd").val();
-    rangeEnd = rangeEnd.includes(":") ? rangeEnd : rangeEnd - 1;
-    m3u8dlArg += ` --downloadRange "${rangeStart}-${rangeEnd}"`
-
-    let customKey = $("#customKey").val().trim();  // 自定义密钥
-    if (customKey) {
-        if (isHexKey(customKey)) {
-            customKey = HexStringToArrayBuffer(customKey);
-            customKey = ArrayBufferToBase64(customKey);
-            m3u8dlArg += ` --useKeyBase64 "${customKey}"`;
-        } else if (customKey.length == 24 && customKey.slice(-2) == "==") {
-            m3u8dlArg += ` --useKeyBase64 "${customKey}"`;
-        }
-    }
-    const customIV = $("#customIV").val();  // 自定义IV
-    m3u8dlArg += customIV ? ` --useKeyIV "${customIV}"` : "";
-    // 只要音频
-    const onlyAudio = $("#onlyAudio").prop("checked");
-    m3u8dlArg += onlyAudio ? ` --enableAudioOnly` : "";
-
-    return m3u8dlArg;
-}
-
 /**
  * 时间格式转为切片序号
  * @param {string} time

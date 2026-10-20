@@ -1,148 +1,8 @@
 (function () {
-    var _videoObj = [];
-    var _videoSrc = [];
     var _key = new Set();
     var m3u8Text = new Map();
     chrome.runtime.onMessage.addListener(function (Message, sender, sendResponse) {
         if (chrome.runtime.lastError) { return; }
-        // 获取页面视频对象
-        if (Message.Message == "getVideoState") {
-            let videoObj = [];
-            let videoSrc = [];
-            document.querySelectorAll("video, audio").forEach(function (video) {
-                if (video.currentSrc != "" && video.currentSrc != undefined) {
-                    videoObj.push(video);
-                    videoSrc.push(video.currentSrc);
-                }
-            });
-            const iframe = document.querySelectorAll("iframe");
-            if (iframe.length > 0) {
-                iframe.forEach(function (iframe) {
-                    if (iframe.contentDocument == null) { return true; }
-                    iframe.contentDocument.querySelectorAll("video, audio").forEach(function (video) {
-                        if (video.currentSrc != "" && video.currentSrc != undefined) {
-                            videoObj.push(video);
-                            videoSrc.push(video.currentSrc);
-                        }
-                    });
-                });
-            }
-            if (videoObj.length > 0) {
-                if (videoObj.length !== _videoObj.length || videoSrc.toString() !== _videoSrc.toString()) {
-                    _videoSrc = videoSrc;
-                    _videoObj = videoObj;
-                }
-                Message.index = Message.index == -1 ? 0 : Message.index;
-                const video = videoObj[Message.index];
-                const timePCT = video.currentTime / video.duration * 100;
-                sendResponse({
-                    time: timePCT,
-                    currentTime: video.currentTime,
-                    duration: video.duration,
-                    volume: video.volume,
-                    count: _videoObj.length,
-                    src: _videoSrc,
-                    paused: video.paused,
-                    loop: video.loop,
-                    speed: video.playbackRate,
-                    muted: video.muted,
-                    type: video.tagName.toLowerCase(),
-                    videoStatus: videoObj.map(v => v.paused ? 1 : 0)
-                });
-                return true;
-            }
-            sendResponse({ count: 0 });
-            return true;
-        }
-        // 速度控制
-        if (Message.Message == "speed") {
-            if (_videoObj[Message.index]?.playbackRate !== undefined) {
-                _videoObj[Message.index].playbackRate = Message.speed;
-            }
-            return true;
-        }
-        // 画中画
-        if (Message.Message == "pip") {
-            if (document.pictureInPictureElement) {
-                try { document.exitPictureInPicture(); } catch (e) { return true; }
-                sendResponse({ state: false });
-                return true;
-            }
-            try { _videoObj[Message.index].requestPictureInPicture(); } catch (e) { return true; }
-            sendResponse({ state: true });
-            return true;
-        }
-        // 全屏
-        if (Message.Message == "fullScreen") {
-            if (document.fullscreenElement) {
-                try { document.exitFullscreen(); } catch (e) { return true; }
-                sendResponse({ state: false });
-                return true;
-            }
-            setTimeout(function () {
-                try { _videoObj[Message.index].requestFullscreen(); } catch (e) { return true; }
-            }, 500);
-            sendResponse({ state: true });
-            return true;
-        }
-        // 播放
-        if (Message.Message == "play") {
-            _videoObj[Message.index]?.play();
-            return true;
-        }
-        // 暂停
-        if (Message.Message == "pause") {
-            _videoObj[Message.index]?.pause();
-            return true;
-        }
-        // 循环播放
-        if (Message.Message == "loop") {
-            if (_videoObj[Message.index]?.loop !== undefined) {
-                _videoObj[Message.index].loop = Message.action;
-            }
-            return true;
-        }
-        // 设置音量
-        if (Message.Message == "setVolume") {
-            if (_videoObj[Message.index]?.volume !== undefined) {
-                _videoObj[Message.index].volume = Message.volume;
-            }
-            sendResponse("ok");
-            return true;
-        }
-        // 静音
-        if (Message.Message == "muted") {
-            if (_videoObj[Message.index]?.muted !== undefined) {
-                _videoObj[Message.index].muted = Message.action;
-            }
-            return true;
-        }
-        // 设置视频进度
-        if (Message.Message == "setTime") {
-            if (_videoObj[Message.index]?.currentTime !== undefined && _videoObj[Message.index]?.duration !== undefined) {
-                _videoObj[Message.index].currentTime = Message.time * _videoObj[Message.index].duration / 100;
-            }
-            sendResponse("ok");
-            return true;
-        }
-        // 截图视频图片
-        if (Message.Message == "screenshot") {
-            try {
-                let video = _videoObj[Message.index];
-                let canvas = document.createElement("canvas");
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-                canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
-                let link = document.createElement("a");
-                link.href = canvas.toDataURL("image/jpeg");
-                link.download = `${location.hostname}-${secToTime(video.currentTime)}.jpg`;
-                link.click();
-                canvas = null;
-                link = null;
-                sendResponse("ok");
-                return true;
-            } catch (e) { console.log(e); return true; }
-        }
         if (Message.Message == "getKey") {
             sendResponse(Array.from(_key));
             return true;
@@ -207,18 +67,6 @@
     }
     connect();
 
-    function secToTime(sec) {
-        let time = "";
-        let hour = Math.floor(sec / 3600);
-        let min = Math.floor((sec % 3600) / 60);
-        sec = Math.floor(sec % 60);
-        if (hour > 0) { time = hour + "'"; }
-        if (min < 10) { time += "0"; }
-        time += min + "'";
-        if (sec < 10) { time += "0"; }
-        time += sec;
-        return time;
-    }
     const isFirefox = navigator.userAgent.includes('Firefox');
     const sendAddMedia = (data) => {
         chrome.runtime.sendMessage({
@@ -262,16 +110,6 @@
             }
             if (_key.has(key)) { return; }
             _key.add(key);
-            chrome.runtime.sendMessage({
-                Message: "send2local",
-                action: "addKey",
-                data: key,
-            });
-            chrome.runtime.sendMessage({
-                Message: "popupAddKey",
-                data: key,
-                url: event.data.url,
-            });
         }
         if (event.data.action == "catCatchFFmpeg") {
             if (!event.data.use ||

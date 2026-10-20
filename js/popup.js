@@ -1,7 +1,6 @@
 // 解析参数
 const params = new URL(location.href).searchParams;
 const _tabId = parseInt(params.get("tabId"));
-const _type = params.get("type");
 
 // 当前页面
 const $mediaList = $('#mediaList');
@@ -13,8 +12,6 @@ const $allMediaList = $('#allMediaList');
 const $all = $("<div></div>");
 const $allCount = $("#allTab #quantity");
 let allCount = 0;
-// 疑似密钥
-const $maybeKey = $("<div></div>");
 // 提示 操作按钮 DOM
 const $tips = $("#Tips");
 const $down = $("#down");
@@ -24,12 +21,6 @@ const allData = new Map([
   [true, new Map()],  // 当前页面
   [false, new Map()]  // 其他页面
 ]);
-// 筛选
-const $filter_ext = $("#filter #ext");
-// 储存所有扩展名，保存是否筛选状态 来判断新加入的资源 立刻判断是否需要隐藏
-const filterExt = new Map();
-// 删除重复文件名
-let duplicateFilenamesSet = null;
 // 当前所在页面
 let activeTab = true;
 // 储存下载id
@@ -85,8 +76,6 @@ function AddMedia(data, currentTab = true) {
     data.parsing = "m3u8";
   } else if (isMPD(data)) {
     data.parsing = "mpd";
-  } else if (isJSON(data)) {
-    data.parsing = "json";
   }
   // 网站图标
   if (data.favIconUrl && !favicon.has(data.webUrl)) {
@@ -108,14 +97,9 @@ function AddMedia(data, currentTab = true) {
                 <span class="group">${data.group && G.showGroup ? `[${data.group}]` : ""}</span>
                 <span class="name ${data.parsing || data.isRegex || data.tabId == -1 ? "bold" : ""}">${trimName}</span>
                 <span class="size ${data.size ? "" : "hide"}">${data.size}</span>
-                <img src="img/copy.png" class="icon copy" id="copy" title="${i18n.copy}"/>
                 <img src="img/parsing.png" class="icon parsing ${data.parsing ? "" : "hide"}" id="parsing" data-type="${data.parsing}" title="${i18n.parser}"/>
                 <img src="img/play.png" class="icon play ${data.isPlay ? "" : "hide"}" id="play" title="${i18n.preview}"/>
                 <img src="img/download.svg" class="icon download" id="download" title="${i18n.download}"/>
-                <img src="img/aria2.png" class="icon aria2 ${G.enableAria2Rpc ? "" : "hide"}"" id="aria2" title="Aria2"/>
-                <img src="img/invoke.svg" class="icon invoke ${G.invoke ? "" : "hide"}"" id="invoke" title="${i18n.invoke}"/>
-                <img src="img/send.svg" class="icon send ${G.send2localManual || G.send2local ? "" : "hide"}"" id="send2local" title="${i18n.send2local}"/>
-                <img src="img/mqtt.svg" class="icon mqtt ${G.mqttEnable ? "" : "hide"}" id="mqtt" title="${i18n.send2MQTT}"/>
             </div>
             <div class="url hide">
                 <div id="mediaInfo" data-state="false">
@@ -123,10 +107,7 @@ function AddMedia(data, currentTab = true) {
                     ${data.type ? `<br><b>MIME:</b>  ${data.type}` : ""}
                 </div>
                 <div class="moreButton">
-                    <div id="qrcode"><img src="img/qrcode.png" class="icon qrcode" title="QR Code"/></div>
                     <div id="catDown"><img src="img/cat-down.png" class="icon cat-down" title="${i18n.downloadWithRequestHeader}"/></div>
-                    <div id="catDownFFmpeg"><img src="img/send2ffmpeg.svg" class="icon send2ffmpeg" title="${i18n.sendFfmpeg}"/></div>
-                    <div><img src="img/invoke.svg" class="icon invoke" title="${i18n.invoke}"/></div>
                 </div>
                 <a href="${data.url}" target="_blank" download="${data.downFileName}">${data.url}</a>
                 <br>
@@ -238,81 +219,13 @@ function AddMedia(data, currentTab = true) {
     }
     return false;
   });
-  // 二维码
-  data.html.find("#qrcode").click(function () {
-    const size = data.url.length >= 300 ? 400 : 256;
-    $(this).html("").qrcode({ width: size, height: size, text: data.url }).off("click");
-  });
   // 猫抓下载器 下载
   data.html.find("#catDown").click(function () {
     catDownload(data);
   });
-  data.html.find("#catDownFFmpeg").click(function () {
-    catDownload(data, { ffmpeg: "addFile" });
-  });
-  //点击复制网址
-  data.html.find('#copy').click(function () {
-    const text = copyLink(data);
-    navigator.clipboard.writeText(text);
-    Tips(i18n.copiedToClipboard);
-    return false;
-  });
-  // 发送到Aria2
-  data.html.find('#aria2').click(function () {
-    aria2AddUri(data, function (data) {
-      Tips(i18n.hasSent + JSON.stringify(data), 2000);
-    }, function (errMsg) {
-      Tips(i18n.sendFailed, 2000);
-      console.error(errMsg);
-    });
-    return false;
-  });
   // 下载
   data.html.find('#download').click(function (event) {
-    if (G.m3u8dl && (isM3U8(data) || isMPD(data))) {
-      if (!data.url.startsWith("blob:")) {
-        const m3u8dlArg = templates(G.m3u8dlArg, data);
-        const url = 'm3u8dl:' + (G.m3u8dl == 1 ? Base64.encode(m3u8dlArg) : m3u8dlArg);
-        if (url.length >= 2046) {
-          navigator.clipboard.writeText(m3u8dlArg);
-          Tips(i18n.M3U8DLparameterLong, 2000);
-          return false;
-        }
-        // 下载前确认参数
-        if (G.m3u8dlConfirm) {
-          data.html.find('.confirm').remove();
-          const confirm = $(`<div class="confirm">
-                        <textarea type="text" class="width100" rows="10">${m3u8dlArg}</textarea>
-                        <button class="button2" id="confirm">${i18n.confirm}</button>
-                        <button class="button2" id="close">${i18n.close}</button>
-                    </div>`);
-          confirm.find("#confirm").click(function () {
-            const textarea = confirm.find("textarea").val();
-            const url = 'm3u8dl:' + (G.m3u8dl == 1 ? Base64.encode(textarea) : textarea);
-            confirm.remove();
-            if (G.isFirefox) {
-              window.location.href = url;
-              return false;
-            }
-            chrome.tabs.update({ url: url });
-            return false;
-          });
-          confirm.find("#close").click(function () {
-            confirm.remove();
-          });
-          data.html.append(confirm);
-          return false;
-        }
-        if (G.isFirefox) {
-          window.location.href = url;
-          return false;
-        }
-        chrome.tabs.update({ url: url });
-        return false;
-      }
-      Tips(i18n.blobM3u8DLError, 1500);
-    }
-    if (G.m3u8AutoDown && data.parsing == "m3u8") {
+    if (data.parsing == "m3u8") {
       openParser(data, { autoDown: true });
       return false;
     }
@@ -321,57 +234,6 @@ function AddMedia(data, currentTab = true) {
       filename: data.downFileName,
       saveAs: G.saveAs
     }, function (id) { downData[id] = data; });
-    return false;
-  });
-  // 调用
-  data.html.find('.invoke').click(function (event) {
-    const url = templates(G.invokeText, data);
-
-    // 下载前确认参数
-    if (G.invokeConfirm) {
-      data.html.find('.confirm').remove();
-      const confirm = $(`<div class="confirm">
-                        <textarea type="text" class="width100" rows="10">${url}</textarea>
-                        <button class="button2" id="confirm">${i18n.confirm}</button>
-                        <button class="button2" id="close">${i18n.close}</button>
-                    </div>`);
-      confirm.find("#confirm").click(function () {
-        const url = confirm.find("textarea").val();
-        confirm.remove();
-        if (G.isFirefox) {
-          window.location.href = url;
-          return false;
-        }
-        chrome.tabs.update({ url: url });
-        return false;
-      });
-      confirm.find("#close").click(function () {
-        confirm.remove();
-      });
-      data.html.append(confirm);
-      return false;
-    }
-
-    if (G.isFirefox) {
-      window.location.href = url;
-      return false;
-    }
-    chrome.tabs.update({ url: url });
-    return false;
-  });
-  //播放
-  data.html.find('#play').click(function () {
-    if (isEmpty(G.Player)) { return true; }
-    if (G.Player == "$shareApi$" || G.Player == "${shareApi}") {
-      navigator.share({ url: data.url });
-      return false;
-    }
-    let url = templates(G.Player, data);
-    if (G.isFirefox) {
-      window.location.href = url;
-      return false;
-    }
-    chrome.tabs.update({ url: url });
     return false;
   });
   //解析
@@ -396,114 +258,9 @@ function AddMedia(data, currentTab = true) {
       data.html.find('input').prop("checked", newValue);
     }
   });
-  // 数据发送
-  data.html.find("#send2local").click(function () {
-    send2local("catch", data, data.tabId).then(function (success) {
-      success && success?.ok && Tips(i18n.hasSent, 1000);
-    }).catch(function (error) {
-      error ? Tips(error, 1000) : Tips(i18n.sendFailed, 1000);
-    });
-    return false;
-  });
-
-  // MQTT 发送
-  data.html.find("#mqtt").click(function () {
-    const $mqttButton = $(this);
-
-    // 防止重复点击
-    if ($mqttButton.hasClass('mqtt-sending')) {
-      return false;
-    }
-
-    // 禁用按钮并添加发送中状态
-    $mqttButton.addClass('mqtt-sending').prop('disabled', true);
-
-    // 1. 点击后，提示 正在发送到MQTT服务器
-    Tips(i18n.sendingToMQTT || "Sending to MQTT server...", 2000);
-
-    sendToMQTT(data).then(function (success) {
-      // 5. 已发送消息到 MQTT 服务器
-      Tips(i18n.messageSentToMQTT || "Message sent to MQTT server", 2000);
-    }).catch(function (error) {
-      // 失败时显示详细错误信息
-      const errorMsg = error ? error.toString() : (i18n.sendFailed || "Send failed");
-      Tips(errorMsg, 10000);
-      console.error("MQTT send error:", error);
-    }).finally(function () {
-      // 恢复按钮状态
-      $mqttButton.removeClass('mqtt-sending').prop('disabled', false);
-    });
-    return false;
-  });
-
   // 使用Map 储存数据
   allData.get(currentTab).set(data.requestId, data);
 
-  // 筛选
-  if (!filterExt.has(data.ext)) {
-    filterExt.set(data.ext, true);
-    const html = $(`<label class="flexFilter" id="${data.ext}"><input type="checkbox" checked>${data.ext}</label>`);
-    html.click(function () {
-      filterExt.set(this.id, html.find("input").prop("checked"));
-      getAllData().forEach(function (value) {
-        if (filterExt.get(value.ext)) {
-          value.checked = true;
-          value.html.show();
-        } else {
-          value.checked = false;
-          value.html.hide();
-        }
-      });
-
-      $filter_ext.find("input:checked").length ? $tips.hide() : $tips.html(i18n.noData).show();
-    });
-    $filter_ext.append(html);
-  }
-  // 如果被筛选出去 直接隐藏
-  if (!filterExt.get(data.ext) || duplicateFilenamesSet?.has(data.name)) {
-    data.html.hide();
-    data.html.find("input").prop("checked", false);
-  }
-  duplicateFilenamesSet && duplicateFilenamesSet.add(data.name);
-
-  return data.html;
-}
-
-function AddKey(key) {
-  // 检查key是否合法
-  const base64Key = base64ToHex(key);
-  if (!base64Key) { return; }
-
-  const data = {};
-  data.html = $(`
-        <div class="panel">
-            <div class="panel-heading">
-                <span class="name bold">${key}</span>
-                <img src="img/copy.png" class="icon copy" id="copy" title="${i18n.copy}"/>
-                <img src="img/send.svg" class="icon send ${G.send2localManual || G.send2local ? "" : "hide"}"" id="send2local" title="${i18n.send2local}"/>
-            </div>
-            <div class="url hide">
-                Hex: ${base64Key}
-                <br>
-                Base64: ${key}
-            </div>
-        </div>`);
-  data.html.find('.panel-heading').click(function () {
-    data.html.find(".url").toggle();
-  });
-  data.html.find('.copy').click(function () {
-    navigator.clipboard.writeText(key);
-    Tips(i18n.copiedToClipboard);
-    return false;
-  });
-  data.html.find("#send2local").click(function () {
-    send2local("addKey", key).then(function (success) {
-      success && success?.ok && Tips(i18n.hasSent, 1000);
-    }).catch(function (error) {
-      error ? Tips(error, 1000) : Tips(i18n.sendFailed, 1000);
-    });
-    return false;
-  });
   return data.html;
 }
 
@@ -516,8 +273,6 @@ $(".Tabs .TabButton").click(function () {
   $(this).addClass("Active");
   $(".container").removeClass("TabShow").eq(index).addClass("TabShow");
   UItoggle();
-  $("#filter, #unfold").hide();
-  $("#features").hide();
 });
 // 其他页面
 $('#allTab').click(function () {
@@ -540,22 +295,9 @@ $('#DownFile').click(function () {
   if (checkedData.length >= 10 && !confirm(i18n("confirmDownload", [checkedData.length]))) {
     return;
   }
-  if (G.enableAria2Rpc) {
-    Tips(i18n.hasSent, 2000);
-    checkedData.forEach(function (data) {
-      aria2AddUri(data);
-    });
-    return;
-  }
   let index = 0;
   for (let data of checkedData) {
-    if (G.m3u8dl && (data.parsing == "m3u8" || data.parsing == "mpd") && !data.url.startsWith("blob:")) {
-      const m3u8dlArg = templates(G.m3u8dlArg, data);
-      const url = 'm3u8dl:' + (G.m3u8dl == 1 ? Base64.encode(m3u8dlArg) : m3u8dlArg);
-      chrome.tabs.create({ url: url });
-      continue;
-    }
-    if (G.m3u8AutoDown && data.parsing == "m3u8") {
+    if (data.parsing == "m3u8") {
       openParser(data, { autoDown: true, autoClose: true });
       continue;
     }
@@ -584,113 +326,14 @@ $mergeDown.click(function () {
   }
   catDownload(checkedData, { ffmpeg: "merge" })
 });
-// 复制选中文件
-$('#AllCopy').click(function () {
-  const url = [];
-  getData().forEach(function (data) {
-    data.checked && url.push(copyLink(data));
-  });
-  navigator.clipboard.writeText(url.join("\n"));
-  Tips(i18n.copiedToClipboard);
-});
-// 全选 反选
-$('#AllSelect, #invertSelection').click(function () {
+// 反选
+$('#invertSelection').click(function () {
   checkboxState = !checkboxState;
-  let checked = false;
-  if (this.id == "AllSelect") {
-    checked = true;
-    checkboxState = true;
-  }
   getData().forEach(function (data) {
-    data.checked = checked ? checked : !data.checked;
+    data.checked = !data.checked;
   });
   mergeDownButton();
 });
-// unfoldAll展开全部  unfoldPlay展开可播放 unfoldFilter展开选中的 fold关闭展开
-$('#unfoldAll, #unfoldPlay, #unfoldFilter, #fold').click(function () {
-  $("#features").hide();
-  if (this.id == "unfoldAll") {
-    getData().forEach(function (data) {
-      if (data.html.is(":hidden")) { return true; }
-      !data.urlPanelShow && data.panelHeading.click();
-    });
-  } else if (this.id == "unfoldPlay") {
-    getData().forEach(function (data) {
-      if (data.html.is(":hidden")) { return true; }
-      data.isPlay && !data.urlPanelShow && data.panelHeading.click();
-    });
-  } else if (this.id == "unfoldFilter") {
-    getData().forEach(function (data) {
-      if (data.html.is(":hidden")) { return true; }
-      data.checked && !data.urlPanelShow && data.panelHeading.click();
-    });
-  } else if (this.id == "fold") {
-    getData().forEach(function (data) {
-      if (data.html.is(":hidden")) { return true; }
-      data.urlPanelShow && data.panelHeading.click();
-    });
-  }
-});
-// 捕捉/录制 展开按钮 筛选按钮 按钮
-// $('#Catch, #openUnfold, #openFilter, #more').click(function () {
-$('#openFilter, #more').click(function () {
-  const $panel = $(`#${this.getAttribute("panel")}`);
-  $panel.css("bottom", $down[0].offsetHeight + "px");
-  $(".more").not($panel).hide();
-  if ($panel.is(":hidden")) {
-    $panel.css("display", "flex");
-    // const _height = $panel[0].offsetHeight + $down[0].offsetHeight;
-    // $(".container").css("margin-bottom", _height);
-    return;
-  }
-  // $(".container").css("margin-bottom", $down[0].offsetHeight + "px");
-  $panel.hide();
-});
-
-// 正则筛选
-$("#regularText").bind('keypress', function (event) {
-  if (event.keyCode == "13") {
-    $tips.hide();
-    const input = $(this).val();
-    if (input == "") {
-      getData().forEach(function (data) {
-        data.checked = true;
-        data.html.show();
-      });
-      return;
-    }
-    const regex = new RegExp($(this).val());
-    let remainingCount = 0;
-    getData().forEach(function (data) {
-      data.checked = true;
-      data.html.show();
-      if (!regex.test(data.url)) {
-        data.checked = false;
-        data.html.hide();
-        return;
-      }
-      remainingCount++;
-    });
-    remainingCount === 0 && $tips.html(i18n.noData).show();
-    $("#filter").hide();
-  }
-});
-
-// 删除重复文件名
-$("#filter-duplicateFilenames, #features-duplicateFilenames").click(function () {
-  duplicateFilenamesSet = new Set();
-  getData().forEach(function (value) {
-    if (duplicateFilenamesSet.has(value.name)) {
-      value.html.hide();
-      value.checked = false;
-      return;
-    }
-    duplicateFilenamesSet.add(value.name);
-  });
-  $("#filter").hide();
-  mergeDownButton();
-});
-
 // 清空数据
 $('#Clear').click(function () {
   chrome.runtime.sendMessage({ Message: "clearData", tabId: G.tabId, type: activeTab });
@@ -709,12 +352,6 @@ $('#Clear').click(function () {
 $("#MobileUserAgent").click(function () {
   chrome.runtime.sendMessage({ Message: "mobileUserAgent", tabId: G.tabId }, function () {
     G.refreshClear && $('#Clear').click();
-    updateButton();
-  });
-});
-// 自动下载
-$("#AutoDown").click(function () {
-  chrome.runtime.sendMessage({ Message: "autoDown", tabId: G.tabId }, function () {
     updateButton();
   });
 });
@@ -739,86 +376,8 @@ if (G.isFirefox) {
 }
 // 跳转页面
 $("[go]").click(function () {
-  let url = this.getAttribute("go");
-  if (url == "ffmpegURL") {
-    chrome.tabs.create({ url: G.ffmpegConfig.url })
-    return;
-  }
-  chrome.tabs.create({ url: url });
+  chrome.tabs.create({ url: this.getAttribute("go") });
 });
-// 暂停 启用
-$("#enable").click(function () {
-  chrome.runtime.sendMessage({ Message: "enable" }, function (state) {
-    $("#enable").html(state ? i18n.pause : i18n.enable);
-  });
-});
-// 弹出窗口
-$("#popup").click(function () {
-  chrome.tabs.get(G.tabId, function (tab) {
-    switch (G.popupMode) {
-      case 0:
-        chrome.tabs.create({ url: `preview.html?tabId=${G.tabId}`, index: tab.index + 1 });
-        break;
-      case 1:
-        chrome.tabs.create({ url: `popup.html?tabId=${G.tabId}&type=tab`, index: tab.index + 1 });
-        break;
-      case 2:
-        chrome.windows.create({ url: `preview.html?tabId=${G.tabId}`, type: "popup", height: 1080, width: 1920 });
-        break;
-      case 3:
-        chrome.windows.create({ url: `popup.html?tabId=${G.tabId}&type=window`, type: "popup", height: 1080, width: 1920 });
-        break;
-      default:
-        chrome.tabs.create({ url: `preview.html?tabId=${G.tabId}`, index: tab.index + 1 });
-        break;
-    }
-    window.close();
-  });
-});
-$("#currentPage").click(function () {
-  chrome.tabs.query({ active: true, currentWindow: false }, function (tabs) {
-    chrome.tabs.update({ url: `popup.html?tabId=${tabs[0].id}${_type ? "&type=" + _type : ""}` });
-  });
-});
-
-// 发送到本地 多个
-$("#send2localSelect").click(function () {
-  if (window.confirm(i18n("send2localTips")) && getData().size > 1) {
-    const checkedData = [];
-    getData().forEach(function (item) {
-      if (item.checked) {
-        checkedData.push(item);
-      }
-    });
-    send2localArray("catch", checkedData, G.tabId).then(function (success) {
-      success && success?.ok && Tips(i18n.hasSent, 1000);
-    }).catch(function (error) {
-      error ? Tips(error, 1000) : Tips(i18n.sendFailed, 1000);
-    });
-    return;
-  }
-  getData().forEach(function (item) {
-    if (item.checked) {
-      send2local("catch", item, item.tabId).then(function (success) {
-        success && success?.ok && Tips(i18n.hasSent, 1000);
-      }).catch(function (error) {
-        error ? Tips(error, 1000) : Tips(i18n.sendFailed, 1000);
-      });
-    }
-  });
-});
-
-// 复制所有疑似密钥
-$("#maybeKeyCopy").click(function () {
-  const keys = [];
-  $("#maybeKey .name").each(function () {
-    keys.push(`base64: ${$(this).text()}\nhex: ${base64ToHex($(this).text())}`);
-  });
-  if (keys.length == 0) { return; }
-  navigator.clipboard.writeText(keys.join("\n\n"));
-  Tips(i18n.copiedToClipboard);
-});
-
 async function getPageDOM() {
   try {
     const result = await new Promise((resolve, reject) => {
@@ -841,16 +400,11 @@ const interval = setInterval(async function () {
   if (!G.initSyncComplete || !G.initLocalComplete || !G.tabId) { return; }
   clearInterval(interval);
 
-  if (G.popup && !_tabId) {
-    $("#popup").click();
-    return;
-  }
   // 侧边面板模式 body 宽度100%
   if (_tabId) {
     G.tabId = _tabId;
     $("body").css("width", "100%");
     $("#down").css("justify-content", "center").find("button").css("margin-left", "5px");
-    _type == "window" && $("#currentPage").show();
   }
 
   // 获取页面DOM
@@ -971,53 +525,15 @@ const interval = setInterval(async function () {
       sendResponse("OK");
       return true;
     }
-    // 添加疑似密钥
-    if (Message.Message == "popupAddKey") {
-      $("#maybeKeyTab").show();
-      chrome.tabs.query({}, function (tabs) {
-        let tabId = -1;
-        for (let item of tabs) {
-          if (item.url == Message.url) {
-            tabId = item.id;
-            break;
-          }
-        }
-        if (tabId == -1 || tabId == G.tabId) {
-          $maybeKey.append(AddKey(Message.data));
-        }
-        !$("#maybeKey .panel").length && $("#maybeKeyCopy").before($maybeKey);
-      });
-      sendResponse("OK");
-      return true;
-    }
   });
-  // 获取模拟手机 自动下载 捕获 状态
+  // 获取模拟手机 捕获 状态
   updateButton();
-
-  // 上一次设定的倍数
-  $("#playbackRate").val(G.playbackRate);
 
   loadCSS();
 
   const observer = new MutationObserver(updateDownHeight);
   observer.observe($down[0], { childList: true, subtree: true, attributes: true });
   setTimeout(updateDownHeight, 500);
-  // 疑似密钥
-  chrome.webNavigation.getAllFrames({ tabId: G.tabId }, function (frames) {
-    if (!frames) { return; }
-    for (let frame of frames) {
-      chrome.tabs.sendMessage(G.tabId, { Message: "getKey" }, { frameId: frame.frameId }, function (result) {
-        if (chrome.runtime.lastError || !result || result.length == 0) { return; }
-        $("#maybeKeyTab").show();
-        for (let key of result) {
-          $maybeKey.append(AddKey(key));
-        }
-        $("#maybeKeyCopy").before($maybeKey);
-        UItoggle();
-      });
-    }
-  });
-
   // 是否屏蔽网站
   chrome.runtime.sendMessage(chrome.runtime.id, { Message: "damnUrlHas" }, function (response) {
     if (response && G.damn) {
@@ -1039,14 +555,6 @@ function updateButton() {
         $DOM.html(state.MobileUserAgent ? i18n.closeSimulation : i18n.simulateMobile);
         continue;
       }
-      if (key == "AutoDown") {
-        $DOM.html(state.AutoDown ? i18n.closeDownload : i18n.autoDownload);
-        continue;
-      }
-      if (key == "enable") {
-        $DOM.html(state.enable ? i18n.pause : i18n.enable);
-        continue;
-      }
       const script = G.scriptList.get(key + ".js");
       $DOM.html(state[key] ? script.off : script.name);
     }
@@ -1054,7 +562,6 @@ function updateButton() {
 }
 /* 格式判断 */
 function isPlay(data) {
-  if (G.Player && !isJSON(data) && !isPicture(data)) { return true; }
   const typeArray = ['video/ogg', 'video/mp4', 'video/webm', 'audio/ogg', 'audio/mp3', 'audio/wav', 'audio/m4a', 'video/3gp', 'video/mpeg', 'video/mov'];
   return isMediaExt(data.ext) || typeArray.includes(data.type) || isM3U8(data);
 }
@@ -1205,23 +712,4 @@ function getAllData() {
 // 更新底部按钮高度
 function updateDownHeight() {
   $(".container").css("margin-bottom", ($down[0].offsetHeight + 2) + "px");
-}
-
-function base64ToHex(base64) {
-  let binaryString;
-  try {
-    binaryString = atob(base64);
-  } catch (error) {
-    console.error("Invalid Base64 string:", error, base64);
-    return false;
-  }
-  let hexString = '';
-  for (let i = 0; i < binaryString.length; i++) {
-    let hex = binaryString.charCodeAt(i).toString(16);
-    if (hex.length === 1) {
-      hex = '0' + hex;
-    }
-    hexString += hex;
-  }
-  return hexString;
 }

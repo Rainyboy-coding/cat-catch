@@ -32,17 +32,10 @@
     "alarms",
     "declarativeNetRequest",
     "scripting",
-    "sidePanel",
-    "contextMenus"
+    "sidePanel"
   ],
   "commands": {
     "_execute_action": {},
-    "enable": {
-      "description": "__MSG_pause__ / __MSG_enable__"
-    },
-    "auto_down": {
-      "description": "__MSG_autoDownload__"
-    },
     "catch": {
       "description": "__MSG_cacheCapture__"
     },
@@ -57,9 +50,6 @@
     },
     "deepSearch": {
       "description": "__MSG_deepSearch__"
-    },
-    "preview": {
-      "description": "__MSG_preview__"
     }
   },
   "host_permissions": [

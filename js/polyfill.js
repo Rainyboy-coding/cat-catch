@@ -40,16 +40,6 @@ const i18n = new Proxy(chrome.i18n.getMessage, {
     }
 });
 
-// 手机浏览器不支持右键菜单
-if (!chrome.contextMenus) {
-    chrome.contextMenus = {
-        create: function () { },
-        remove: function () { },
-        removeAll: function () { },
-        onClicked: { addListener: function () { } },
-    }
-}
-
 // 手机浏览器没有windows API 只能使用tabs API
 if (!chrome.windows) {
     chrome.windows = {
