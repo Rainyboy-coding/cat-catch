@@ -8,7 +8,6 @@ const _fileName = params.get("filename");   // 自定义文件名
 let tsAddArg = params.get("tsAddArg");  // 自定义 切片参数
 let autoReferer = params.get("autoReferer");    // 是否已经自动调整 referer
 const tabId = parseInt(params.get("tabid"));    // 资源所在的标签页ID 用来获取密钥
-const key = params.get("key");  // 自定义密钥
 const _autoDown = params.get("autoDown");  //是否自动下载
 let autoDown = params.get("autoDown");  //是否自动下载
 const autoClose = params.get("autoClose");  // 下载完是否关闭页面
@@ -29,8 +28,6 @@ let currentIndex = 0;   // 本页面Index
 const _ffmpeg = params.get("ffmpeg");   // 是否发送到 ffmpeg
 const _quantity = params.get("quantity");   // 同时下载的总数
 const _taskId = params.get("taskId");   // 任务id
-
-let isSendFfmpeg = false;   // 是否发送到ffmpeg
 
 // 修改当前标签下的所有xhr的Referer 修改完成 运行init函数
 const requestHeaders = JSONparse(_requestHeaders);
@@ -62,11 +59,6 @@ setRequestHeaders(requestHeaders, () => {
 });
 
 
-// 默认设置
-const allOption = {
-    fold: !G.isMobile,
-    M3u8HideDownloadedSegments: true,
-};
 /* m3u8 解析工具 */
 const hls = new Hls({
     enableWorker: false,
@@ -76,8 +68,6 @@ const _fragments = []; // 储存切片对象
 const keyContent = new Map(); // 储存key的内容
 const initData = new Map(); // 储存map的url
 const decryptor = new AESDecryptor(); // 解密工具 来自hls.js 分离出来的
-let skipDecrypt = false; // 是否跳过解密
-let possibleKeys = new Set();   // 储存疑似 密钥
 let downId = 0; // chrome下载api 回调id
 let currentLevel = -1;  // 当前Level
 let estimateFileSize = 0; // 估算的文件最终大小
@@ -87,6 +77,15 @@ let downDuration = 0; // 下载媒体得时长
 
 let fileStream = undefined; // 流式下载文件输出流
 const downSet = {};   // 下载时 储存设置
+// 下载选项 固定默认值
+const opt = {
+    mp4: true,  // 转为mp4
+    StreamSaver: true,  // 边下边存
+    ffmpeg: false,  // 在线ffmpeg转码
+    dataPreprocessing: false,   // 数据预处理 切片伪装成图片时剔除图片数据
+    saveAs: false,  // 另存为
+    autoClose: false,   // 下载完自动关闭页面
+};
 
 /* 录制相关 */
 let recorder = false; // 开关
@@ -100,12 +99,6 @@ let transmuxer = undefined;
 const $fileSize = $("#fileSize");   // 下载文件大小 进度
 const $progress = $("#progress");   // 下载进度
 const $fileDuration = $("#fileDuration");   // 下载总时长
-const $media_file = $("#media_file");   // 切片列表
-
-/* 框架ffmpeg */
-let iframeFFmpeg = null;
-let iframeFFmpegReady = false;
-let iframeFFmpegReadyRetryCount = 0;
 
 // 自动合并
 let autoMergeTimer = null;
@@ -126,41 +119,16 @@ function init() {
     // 隐藏firefox 不支持的功能
     G.isFirefox && $(".firefoxHide").each(function () { $(this).hide(); });
 
-    // 读取本地配置并装载
-    chrome.storage.local.get(allOption, function (items) {
-        for (let key in items) {
-            if (key == "fold") {
-                items[key] ? $("details").attr("open", "") : $("details").removeAttr("open");
-                continue;
-            }
-            const $dom = $(`#${key}`);
-            $dom.length && $dom.prop("checked", items[key]);
-        }
-    });
-
-    // 转载默认配置
-    $("#thread").val(G.M3u8Thread);
-    $("#mp4").prop("checked", G.M3u8Mp4);
-    $("#onlyAudio").prop("checked", G.M3u8OnlyAudio);
-    $("#skipDecrypt").prop("checked", G.M3u8SkipDecrypt);
-    $("#StreamSaver").prop("checked", G.M3u8StreamSaver);
-    $("#ffmpeg").prop("checked", G.M3u8Ffmpeg);
-    $("#autoClose").prop("checked", autoClose && autoClose == 1 ? true : G.M3u8AutoClose);
-
+    // 下载选项
+    opt.autoClose = autoClose == 1;
+    opt.saveAs = !!G.saveAs;
     // 发送到ffmpeg取消边下边存设置
-    _ffmpeg && $("#StreamSaver").prop("checked", false);
-
-    // 存在密钥参数 自动填写密钥
-    key && $("#customKey").val(key);
+    _ffmpeg && (opt.StreamSaver = false);
 
     // 解码 切片URL参数
     if (tsAddArg != null) {
         tsAddArg = decodeURIComponent(tsAddArg);
-        $("#tsAddArg").html(i18n.restoreGetParameters);
     }
-
-    // 填充重试次数
-    retryCount && $("#retryCount").val(retryCount);
 
     if (isEmpty(_m3u8Url) || _getMpdId) {
         $("#loading").hide(); $("#m3u8Custom").show();
@@ -309,26 +277,7 @@ function init() {
             hls.loadSource(_m3u8Url);
         }
     }
-
-    G.saveAs && $("#saveAs").prop("checked", true);
 }
-
-const channel = new BroadcastChannel('m3u8Channel');
-channel.onmessage = (event) => {
-    const data = event.data;
-    if (data.Message == "mergeData" && data.data && _isMaster == 1 && _taskId == data.data.taskId) {
-        data.data.tabId = currentTabId;
-        createIframeFFmpeg(data.data);
-        channel.postMessage({ Message: "mergeDataReceived", taskId: data.data.taskId });
-    }
-    if (data.Message == "mergeDataReceived" && _isMaster == 0 && _taskId == data.taskId) {
-        setTimeout(() => {
-            $progress.html(i18n.sendFfmpeg);
-            $("#autoClose").prop("checked") && closeTab();
-        }, 1000);
-    }
-};
-
 
 // 监听 MANIFEST_LOADED 装载解析的m3u8 URL
 hls.on(Hls.Events.MANIFEST_LOADED, function (event, data) {
@@ -356,13 +305,7 @@ hls.on(Hls.Events.MANIFEST_PARSED, function (event, data) {
                     <div><label class="more_class"><input type="radio" name="more_video" ${maxBandwidth == item.attrs.BANDWIDTH ? "checked" : ""}/>${item.attrs.RESOLUTION ? i18n.resolution + ":" + item.attrs.RESOLUTION : ""}${item.attrs.BANDWIDTH ? " | " + i18n.bitrate + ":" + (parseInt(item.attrs.BANDWIDTH / 1000) + " Kbps") : ""}</label></div>
                     <a href="${url}">${name}</a>
                     <button id="parser" type="button">${i18n.parser}</button>
-                    <button class="sendFfmpeg" type="button">${i18n.sendFfmpeg}</button>
                 </div>`);
-            html.find(".sendFfmpeg").click(function () {
-                let newUrl = url + `&autoDown=1`;
-                newUrl += `&ffmpeg=addFile`;
-                chrome.tabs.create({ url: newUrl, index: currentIndex + 1, active: false });
-            });
             html.find("#parser").click(function () {
                 chrome.tabs.update({ url: url });
             });
@@ -393,13 +336,7 @@ hls.on(Hls.Events.MANIFEST_PARSED, function (event, data) {
                     <div><label><input type="radio" name="more_audio" ${index == 0 ? "checked" : ""}/>${item.name ? item.name : ""} | ${item.lang ? item.lang : ""} | ${item.groupId ? item.groupId : ""}</label></div>
                     <a href="${url}">${name}</a>
                     <button id="parser" type="button">${i18n.parser}</button>
-                    <button class="sendFfmpeg" type="button">${i18n.sendFfmpeg}</button>
                 </div>`);
-            html.find(".sendFfmpeg").click(function () {
-                let newUrl = url + `&autoDown=1`;
-                newUrl += `&ffmpeg=addFile`;
-                chrome.tabs.create({ url: newUrl, index: currentIndex + 1, active: false });
-            });
             html.find("#parser").click(function () {
                 chrome.tabs.update({ url: url });
             });
@@ -574,14 +511,13 @@ hls.on(Hls.Events.ERROR, function (event, data) {
             hls.destroy();
             hls.adtsTips = true; // 标记已经提示过
         }
-        $("#play").hide();
         return;
     }
     if (data.type == "otherError" && data.error.message.includes("remux") && hls.skipTheError) {
         return;
     }
     $("#loading").show();
-    $("#loading .optionBox").html(`${i18n.m3u8Error}<button id="setRequestHeadersError">${i18n.setRequestHeaders}</button>`);
+    $("#loading .optionBox").html(i18n.m3u8Error);
 
     /**
      * 下载出错 如果在录制中 停止下载 保存文件
@@ -589,7 +525,7 @@ hls.on(Hls.Events.ERROR, function (event, data) {
      */
     if (retryCount) {
         recorder && stopRecorder();
-        const recorderRetryCount = parseInt($("#retryCount").val());
+        const recorderRetryCount = retryCount;
         const url = new URL(location.href);
         const params = new URLSearchParams(url.search);
         params.set("retryCount", recorderRetryCount ? recorderRetryCount - 1 : 0);
@@ -656,12 +592,6 @@ function parseTs(data) {
     // console.log(data);
     let isEncrypted = false;
     _fragments.splice(0);   // 清空 防止直播HLS无限添加
-    /* 获取 m3u8文件原始内容 MANIFEST_PARSED也能获取但偶尔会为空(BUG?) 放在LEVEL_LOADED获取更安全*/
-    document.querySelector("#m3u8Content").value = data.m3u8;
-
-    // #EXT-X-DISCONTINUITY
-    let discontinuity = { start: 0, cc: 0 };
-    data.endCC && $("#cc").show();
 
     for (let i in data.fragments) {
         i = parseInt(i);
@@ -734,14 +664,6 @@ function parseTs(data) {
             initSegment = data.fragments[i].initSegment;
         }
 
-        // #EXT-X-DISCONTINUITY
-        if (i === data.fragments.length - 1 || data.fragments[i].cc !== data.fragments[i + 1].cc) {
-            if (discontinuity.start == 0) {
-                $('#cc').append(`<option value="0">${i18n.selectAll}</option>`);
-            }
-            $('#cc').append(`<option value="${+discontinuity.start + 1}-${i + 1}">playlist: ${data.fragments[i].cc}</option>`);
-            discontinuity.start = i + 1;
-        }
         _fragments.push({
             url: data.fragments[i].url,
             decryptdata: data.fragments[i].decryptdata,
@@ -752,10 +674,8 @@ function parseTs(data) {
             cc: data.fragments[i].cc,
             live: data.live,
             byteRange: data.fragments[i].byteRange,
-            selected: true,
         });
     }
-    writeText(_fragments);   // 写入ts链接到列表
 
     /* 
     * 录制直播
@@ -779,10 +699,6 @@ function parseTs(data) {
         $("#count").append(' <b>' + i18n.encryptedSAMPLE + '</b>');
     }
 
-    // 范围下载所需数据
-    $("#rangeStart").attr("max", _fragments.length);
-    $("#rangeEnd").attr("max", _fragments.length).val(_fragments.length);
-
     if (data.live) {
         autoDown && highlight();
         $("#recorder").show();
@@ -790,32 +706,9 @@ function parseTs(data) {
     } else {
         estimateFileInfo(_fragments, data.totalduration); // 估算文件大小
         $("#count").append(i18n("m3u8Info", [_fragments.length, secToTime(data.totalduration)]));
-        $("#sendFfmpeg").show();
-        $("#retryCount").parent().hide();
     }
     if (!_fragments.some(fragment => fragment.initSegment) && autoDown) {
         autoMerge();
-    }
-
-    if (tabId && tabId != -1) {
-        chrome.webNavigation.getAllFrames({ tabId: tabId }, function (frames) {
-            if (!frames) { return; }
-            frames.forEach(function (frame) {
-                chrome.tabs.sendMessage(tabId, { Message: "getKey" }, { frameId: frame.frameId }, function (result) {
-                    if (chrome.runtime.lastError || !result || result.length == 0) { return; }
-                    const maybeKey = $("#maybeKey select");
-                    for (let item of result) {
-                        if (possibleKeys.has(item)) { continue; }
-                        possibleKeys.add(item);
-                        maybeKey.append(`<option value="${item}">${item}</option>`);
-                    }
-                    $("#maybeKey").show();
-                    maybeKey.change(function () {
-                        $("#customKey").val(this.value != "tips" ? this.value : "");
-                    });
-                });
-            });
-        });
     }
 
     /**
@@ -823,7 +716,7 @@ function parseTs(data) {
      * 判断是否非常见切片格式。否则勾选预处理。
      */
     if (!["ts", "mp4", "m4s", "aac", "ac3", "webm"].includes(GetExt(_fragments[0].url))) {
-        document.querySelector("#dataPreprocessing").checked = true;
+        opt.dataPreprocessing = true;
     }
 
 
@@ -908,183 +801,12 @@ chrome.downloads.onChanged.addListener(function (downloadDelta) {
     if (!downloadDelta.state) { return; }
     if (downloadDelta.state.current == "complete" && downId == downloadDelta.id) {
         $progress.html(i18n.SavePrompt);
-        $("#autoClose").prop("checked") && closeTab();
+        opt.autoClose && closeTab();
     }
 });
 // 打开目录
 $(".openDir").click(function () {
     downId ? chrome.downloads.show(downId) : chrome.downloads.showDefaultFolder();
-});
-// 下载ts列表
-$("#downText").click(function () {
-    const filename = GetFileName(_m3u8Url) + '.txt';
-    let text = "data:text/plain,";
-    _fragments.forEach(function (item) {
-        text += item.url + "\n";
-    });
-    if (G.isFirefox) {
-        downloadDataURL(text, filename);
-        return;
-    }
-    chrome.downloads.download({
-        url: text,
-        filename: filename
-    });
-});
-
-// 原始m3u8
-$("#originalM3U8").click(function () {
-    showTab("#m3u8Content");
-});
-// 切片列表
-$("#getTs").click(function () {
-    showTab("#mediaList");
-});
-// 在线ffmpeg
-$("#onlineFFmpeg").click(function () {
-    !iframeFFmpeg && createIframeFFmpeg();
-    showTab("#iframeBox");
-});
-
-
-// 播放m3u8
-$("#play").click(function () {
-    if ($(this).data("switch") == "on") {
-        showTab("#video");
-        hls.attachMedia($("#video")[0]);
-        $(this).html(i18n.close).data("switch", "off");
-        hls.on(Hls.Events.MEDIA_ATTACHED, function () {
-            video.play();
-        });
-        return;
-    }
-    hls.detachMedia($("#video")[0]);
-    $(this).html(i18n.play).data("switch", "on");
-    showTab("#mediaList");
-});
-
-// 折叠按钮
-const $popupBox = $("#openKeyBox, #moreFeaturesBox");
-$("#openKey, #moreFeatures").click(function (e) {
-    e.stopPropagation();
-    const $box = $(`#${e.target.id}Box`);
-    if ($box.is(":visible")) {
-        $box.hide();
-        return;
-    }
-    $popupBox.hide();
-    $box.show();
-
-    // 点击其他区域关闭窗口
-    $(document).off("click.closeBox").on("click.closeBox", function () {
-        hideAllBoxes();
-    });
-});
-$popupBox.click(function (e) {
-    e.target.id != "setRequestHeaders" && e.stopPropagation();
-});
-function hideAllBoxes() {
-    $popupBox.hide();
-    $(document).off("click.closeBox");
-}
-
-// 只要音频
-$("#onlyAudio").on("change", function () {
-    if (transmuxer) {
-        $(this).prop("checked", !$(this).prop("checked"));
-        alert(i18n.runningCannotChangeSettings);
-        return;
-    }
-    if ($(this).prop("checked") && !$("#mp4").prop("checked") && !$("#ffmpeg").prop("checked")) {
-        $("#mp4").click();
-    }
-});
-$("#mp4").on("change", function () {
-    if (transmuxer) {
-        $(this).prop("checked", !$(this).prop("checked"));
-        alert(i18n.runningCannotChangeSettings);
-        return;
-    }
-    $("#ffmpeg").prop("checked") && $("#ffmpeg").click();
-    if (!$(this).prop("checked") && !$("#ffmpeg").prop("checked") && $("#onlyAudio").prop("checked")) {
-        $("#onlyAudio").click();
-    }
-});
-$("#StreamSaver, #StreamTest").on("change", function () {
-    if (transmuxer) {
-        $(this).prop("checked", !$(this).prop("checked"));
-        alert(i18n.runningCannotChangeSettings);
-        return;
-    }
-    if ($(this).prop("checked")) {
-        $progress.html(`<b>${i18n.streamSaverTip}</b>`);
-        $("#ffmpeg").prop("checked") && $("#ffmpeg").click();
-        $("#saveAs").prop("checked", false);
-    }
-});
-$("#ffmpeg").on("change", function () {
-    if (transmuxer) {
-        $(this).prop("checked", !$(this).prop("checked"));
-        alert(i18n.runningCannotChangeSettings);
-        return;
-    }
-    if ($(this).prop("checked")) {
-        $("#mp4").prop("checked", false);
-        $("#StreamSaver").prop("checked", false);
-        $("#saveAs").prop("checked", false);
-    }
-});
-// 范围 线程数 滚轮调节
-let debounce2 = undefined;
-$("#rangeStart, #rangeEnd, #thread").on("wheel", function (event) {
-    $(this).blur();
-    let number = $(this).val();
-    number = parseInt(number ? number : 1);
-    number = event.originalEvent.wheelDelta < 0 ? number - 1 : number + 1;
-    if (number < 1 || number > $(this).attr("max")) {
-        return false;
-    }
-    $(this).val(number);
-    if (this.id == "thread") {
-        clearTimeout(debounce2);
-        debounce2 = setTimeout(() => {
-            chrome.storage.local.set({ thread: number });
-        }, 500);
-    }
-    return false;
-});
-$("#rangeStart, #rangeEnd, #thread").keyup(function () {
-    if ($(this).val() == '') {
-        switch (this.id) {
-            case 'rangeStart':
-                $(this).val(1);
-                break;
-            case 'rangeEnd':
-                $(this).val(_fragments.length);
-                break;
-            case 'thread':
-                $(this).val(6);
-                break;
-        }
-        return;
-    }
-});
-
-// 上传key
-$("#uploadKeyFile").change(function () {
-    let fileReader = new FileReader();
-    fileReader.onload = function () {
-        if (this.result.byteLength != 16) {
-            $progress.html(`<b>${i18n.incorrectKey}</b>`);
-            return;
-        }
-        $("#customKey").val(ArrayBufferToBase64(this.result));
-    };
-    let file = $("#uploadKeyFile").prop('files')[0];
-    fileReader.readAsArrayBuffer(file);
-});
-$("#uploadKey").click(function () {
-    $("#uploadKeyFile").click();
 });
 function stopRecorder() {
     $("#recorder").html(i18n.recordLive).data("switch", "on");
@@ -1101,419 +823,61 @@ $("#recorder").click(function () {
         recorder = true;
 
         // 只允许流式下载
-        $("#StreamSaver").prop("checked", true);
-        $("#ffmpeg").prop("checked", false);
+        opt.StreamSaver = true;
+        opt.ffmpeg = false;
         fileStream = createStreamSaver(_fragments[0].url);
 
         $(this).html(fileStream ? i18n.stopDownload : i18n.download).data("switch", "off");
         $progress.html(i18n.waitingForLiveData);
-        retryCount = parseInt($("#retryCount").val());
         return;
     }
     stopRecorder();
 });
 // 在线下载合并ts
-$("#mergeTs").click(async function () {
+$("#mergeTs").click(function () {
     initDownload(); // 初始化下载变量
-    // 设定起始序号
-    let start = $("#rangeStart").val();
-    if (start.includes(":")) {
-        start = timeToIndex(start);
-    } else {
-        start = parseInt(start);
-        start = start ? start - 1 : 0;
-    }
-    // 设定结束序号
-    let end = $("#rangeEnd").val();
-    if (end.includes(":")) {
-        end = timeToIndex(end);
-    } else {
-        end = parseInt(end);
-        end = end ? end - 1 : _fragments.length - 1;
-    }
-    // 检查序号
-    if (start == -1 || end == -1) {
-        $progress.html(`<b>${i18n.sNumError}</b>`);
-        return;
-    }
-    if (start > end) {
-        $progress.html(`<b>${i18n.startGTend}</b>`);
-        return;
-    }
-    if (start > _fragments.length - 1 || end > _fragments.length - 1) {
-        $progress.html(`<b>${i18n("sNumMax", [_fragments.length])}</b>`);
-        return;
-    }
-    /* 设定自定义密钥和IV */
-    let customKey = $("#customKey").val().trim();
-    if (customKey) {
-        if (isHexKey(customKey)) {
-            customKey = HexStringToArrayBuffer(customKey);
-        } else if (customKey.length == 24 && customKey.slice(-2) == "==") {
-            customKey = Base64ToArrayBuffer(customKey);
-            // console.log(customKey);
-        } else if (/^http[s]*:\/\/.+/i.test(customKey)) {
-            let flag = false;
-            await $.ajax({
-                url: customKey,
-                xhrFields: { responseType: "arraybuffer" }
-            }).fail(function () {
-                flag = true;
-            }).done(function (responseData) {
-                customKey = responseData;
-                $("#customKey").val(ArrayBufferToBase64(customKey));
-            });
-            if (flag) {
-                $progress.html(`<b>${i18n.keyDownloadFailed}</b>`);
-                return;
-            }
-        } else {
-            $progress.html(`<b>${i18n.incorrectKey}</b>`);
-            return;
-        }
-        for (let i in _fragments) {
-            _fragments[i].encrypted = true;
-            _fragments[i].decryptdata = {};
-            if (!keyContent.get("customKey")) {
-                keyContent.set("customKey", true);
-            }
-            Object.defineProperty(_fragments[i].decryptdata, "keyContent", {
-                get: function () { return keyContent.get("customKey"); },
-                configurable: true
-            });
-        }
-        keyContent.forEach(function (value, key) {
-            keyContent.set(key, customKey);
-        });
-    }
-    // 自定义IV
-    let customIV = $("#customIV").val().trim();
-    if (customIV) {
-        customIV = StringToUint8Array(customIV);
-        for (let i in _fragments) {
-            _fragments[i].decryptdata.iv = customIV;
-        }
-    }
-    skipDecrypt = $("#skipDecrypt").prop("checked");    // 是否跳过解密
 
     // 大文件无法使用在线ffmpeg 会回退输出ts 改用内置mp4转码
-    if (!G.isFirefox && $("#ffmpeg").prop("checked") && !_ffmpeg && !isSendFfmpeg && estimateFileSize > G.chromeLimitSize) {
-        $("#ffmpeg").prop("checked", false);
-        $("#mp4").prop("checked", true);
+    if (!G.isFirefox && opt.ffmpeg && !_ffmpeg && estimateFileSize > G.chromeLimitSize) {
+        opt.ffmpeg = false;
+        opt.mp4 = true;
         downSet.mp4 = true;
     }
     // 估算检查文件大小
-    if (!$("#StreamSaver").prop("checked") && estimateFileSize > G.chromeLimitSize && confirm(i18n("fileTooLargeStream", ["2G"]))) {
-        $("#StreamSaver").prop("checked", true);
+    if (!opt.StreamSaver && estimateFileSize > G.chromeLimitSize && confirm(i18n("fileTooLargeStream", ["2G"]))) {
+        opt.StreamSaver = true;
     }
 
     // 流式下载
-    if ($("#StreamSaver").prop("checked")) {
+    if (opt.StreamSaver) {
         fileStream = createStreamSaver(_fragments[0].url);
         downloadNew();
-        $("#ffmpeg").prop("checked", false);
-        $("#saveAs").prop("checked", false);
-        $("#stopDownload").show();
-        return;
-    }
-    if ($("#StreamTest").prop("checked")) {
-        downloadNew();
-        $("#ffmpeg").prop("checked", false);
-        $("#saveAs").prop("checked", false);
+        opt.ffmpeg = false;
+        opt.saveAs = false;
         $("#stopDownload").show();
         return;
     }
     $("#stopDownload").show();
-
-    // 提前打开ffmpeg
-    // _ffmpeg && createIframeFFmpeg();
-    if (_ffmpeg || $("#ffmpeg").prop("checked")) {
-        _isMaster == 1 && createIframeFFmpeg();
-    }
-
     downloadNew();
 });
-
-// 添加ts 参数
-$("#tsAddArg").click(function () {
-    if (tsAddArg != null) {
-        window.location.href = window.location.href.replace(/&tsAddArg=[^&]*/g, "");
-        return;
-    }
-    //获取m3u8参数
-    let m3u8Arg = new RegExp("\\.m3u8\\?([^\n]*)").exec(_m3u8Url);
-    if (m3u8Arg) {
-        m3u8Arg = m3u8Arg[1];
-    }
-    const arg = window.prompt(i18n.addParameters, m3u8Arg ?? "");
-    if (arg != null) {
-        window.location.href += "&tsAddArg=" + encodeURIComponent(arg);
-    }
-});
-
-
-// 确认范围
-$("#rangeConfirm").click(function () {
-    let rangeStart = $("#rangeStart").val();
-    let rangeEnd = $("#rangeEnd").val();
-    if (rangeStart.includes(":")) {
-        rangeStart = timeToIndex(rangeStart);
-    } else {
-        rangeStart = parseInt(rangeStart);
-        rangeStart = rangeStart ? rangeStart - 1 : 0;
-    }
-    if (rangeEnd.includes(":")) {
-        rangeEnd = timeToIndex(rangeEnd);
-    } else {
-        rangeEnd = parseInt(rangeEnd);
-        rangeEnd = rangeEnd ? rangeEnd - 1 : _fragments.length - 1;
-    }
-    if (rangeStart == -1 || rangeEnd == -1) {
-        $progress.html(`<b>${i18n.sNumError}</b>`);
-        return;
-    }
-    if (rangeStart > rangeEnd) {
-        $progress.html(`<b>${i18n.startGTend}</b>`);
-        return;
-    }
-    if (rangeStart > _fragments.length - 1 || rangeEnd > _fragments.length - 1) {
-        $progress.html(`<b>${i18n("sNumMax", [_fragments.length])}</b>`);
-        return;
-    }
-
-    // 便利ts列表 在不再范围的切片上取消选中状态
-    const list = document.querySelector("#mediaList");
-    list.querySelectorAll(".media-item").forEach((item, index) => {
-        if (index >= rangeStart && index <= rangeEnd) {
-            item.classList.add("selected");
-            _fragments[index].selected = true;
-        } else {
-            item.classList.remove("selected");
-            _fragments[index].selected = false;
-        }
-    });
-});
-
-// 设置请求头
-$(document).on("click", "#setRequestHeaders, #setRequestHeadersError", function () {
-    const arg = window.prompt(i18n.addParameters, JSON.stringify(requestHeaders));
-    if (arg != null) {
-        params.delete("requestHeaders");
-        params.append("requestHeaders", arg);
-        window.location.href = window.location.origin + window.location.pathname + "?" + params.toString();
-    }
-});
-
-// #EXT-X-DISCONTINUITY 范围选择
-$('#cc').change(function () {
-    if (this.value == "0") {
-        $("#rangeStart").val(1);
-        $("#rangeEnd").val(_fragments.length);
-        return;
-    }
-    const range = this.value.split("-");
-    $("#rangeStart").val(+range[0]);
-    $("#rangeEnd").val(+range[1]);
-});
-
-// 折叠
-$("details summary").click(function () {
-    allOption.fold = !$("details")[0].open;
-    chrome.storage.local.set(allOption);
-});
-
-// 发送到在线ffmpeg
-$("#sendFfmpeg").click(function () {
-    isSendFfmpeg = true;
-    $("#StreamSaver").prop("checked", false);
-    $("#mergeTs").click();
-});
-
-// 监听 正则过滤 回车
-$("#regular").keyup(function (event) {
-    if (event.key === "Enter") {
-        const list = document.querySelector("#mediaList");
-        const reg = new RegExp($("#regular").val());
-        list.querySelectorAll(".media-item").forEach((item, index) => {
-            if (reg.test(_fragments[index].url)) {
-                item.classList.add("selected");
-                _fragments[index].selected = true;
-            } else {
-                item.classList.remove("selected");
-                _fragments[index].selected = false;
-            }
-        });
-    }
-});
-
-// 反选
-$("#invertSelection").click(function () {
-    const list = document.querySelector("#mediaList");
-    list.querySelectorAll(".media-item").forEach((item, index) => {
-        if (item.classList.contains("selected")) {
-            item.classList.remove("selected");
-            _fragments[index].selected = false;
-        } else {
-            item.classList.add("selected");
-            _fragments[index].selected = true;
-        }
-    });
-});
-
-// 隐藏下载成功的切片
-$("#M3u8HideDownloadedSegments").click(function () {
-    allOption.M3u8HideDownloadedSegments = this.checked;
-    chrome.storage.local.set(allOption);
-});
-
-
-// 找到真密钥
-$("#searchingForRealKey").click(function () {
-    const keys = $('#maybeKey option').map(function () {
-        return $(this).val();
-    }).get();
-    keys.shift();   // 删除提示
-
-    let iv = _fragments[0].decryptdata?.iv;
-    if (!iv) {
-        iv = new Uint8Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, _fragments[0].sn]);
-    }
-
-    const customIV = $("#customIV").val().trim();
-    if (customIV) {
-        iv = StringToUint8Array(customIV);
-    }
-    $("#searchingForRealKey").html(i18n.verifying);
-
-    const check = (buffer) => {
-        const uint8Array = new Uint8Array(buffer);
-        // fmp4
-        if ((uint8Array[4] === 0x73 || uint8Array[4] === 0x66) && uint8Array[5] === 0x74 && uint8Array[6] === 0x79 && uint8Array[7] === 0x70) {
-            return true;
-        }
-        // moof
-        if (uint8Array[4] === 0x6d && uint8Array[5] === 0x6f && uint8Array[6] === 0x6f && uint8Array[7] === 0x66) {
-            return true;
-        }
-        // webm
-        if (uint8Array[0] === 0x1a && uint8Array[1] === 0x45 && uint8Array[2] === 0xdf && uint8Array[3] === 0xa3) {
-            return true;
-        }
-        // mp3 ID3
-        if (uint8Array[0] === 0x49 && uint8Array[1] === 0x44 && uint8Array[2] === 0x33) {
-            return true;
-        }
-        // mp3 (MPEG audio frame header)
-        if (uint8Array[0] === 0xff && (uint8Array[1] & 0xe0) === 0xe0) {
-            return true;
-        }
-        // aac (ADTS header)
-        if (uint8Array[0] === 0xff && (uint8Array[1] & 0xf0) === 0xf0) {
-            return true;
-        }
-        // ts
-        const maxCheckLength = Math.min(512, uint8Array.length);
-        for (let i = 0; i < maxCheckLength; i++) {
-            if (uint8Array[i] === 0x47 && (i + 188) < uint8Array.length && uint8Array[i + 188] === 0x47) {
-                return true;
-            }
-        }
-        return false;
-    }
-    const decryptor = new AESDecryptor();
-    fetch(_fragments[0].url)
-        .then(response => response.arrayBuffer())
-        .then(function (buffer) {
-            if (check(buffer)) {
-                $("#searchingForRealKey").html(i18n.searchingForRealKey);
-                alert(i18n.noKeyIsRequired);
-                return;
-            }
-            for (let key of keys) {
-                try {
-                    decryptor.expandKey(Base64ToArrayBuffer(key));
-                    const testBuffer = decryptor.decrypt(buffer, 0, iv.buffer, true);
-                    // 检查是否解密成功
-                    if (check(testBuffer)) {
-                        if (!prompt(i18n.searchingForRealKey, key)) { continue; }
-                        $("#searchingForRealKey").html(i18n.searchingForRealKey);
-                        $("#customKey").val(key);
-                        $('#maybeKey select').val(key);
-                        return;
-                    }
-                } catch (error) {
-                    console.log(error);
-                }
-            };
-            $("#searchingForRealKey").html(i18n.realKeyNotFound);
-        }).catch(function (error) {
-            $("#searchingForRealKey").html(i18n.dataFetchFailed);
-            console.log(error);
-        });
-});
-
 
 /**
  * 调用新下载器的方法
  * @param {number} start 下载范围 开始索引
  * @param {number} end 下载范围 结束索引
  */
-async function downloadNew(start = 0, end = _fragments.length) {
-
-    $("#video").hide();
-    hls.detachMedia($("#video")[0]);
+function downloadNew(start = 0, end = _fragments.length) {
 
     // 避免重复下载
     buttonState("#mergeTs", false);
 
     // 切片下载器
-    // 过滤掉未选择的 _fragments
-    const selectedFragments = recorder ? _fragments.slice(start) : _fragments.filter(fragment => fragment.selected);
-    const down = new Downloader(selectedFragments, parseInt($("#thread").val()));
+    const down = new Downloader(recorder ? _fragments.slice(start) : _fragments);
     down.autoRetry = true;  // 开启自动重试
     $progress.html(`${down.success}/${down.total}`);
 
-    if ($("#StreamTest").prop("checked")) {
-        let ext = (down.mapTag && !down.mapTag.startsWith("data:") ? down.mapTag : down.fragments[0].url).split("/").pop();
-        ext = ext.split("?").shift();
-        ext = ext.split(".").pop();
-        ext = ext ? ext : "ts";
-        ext = (downSet.mp4 && !down.mapTag) ? "mp4" : ext;
-        let fileName = "";
-        const customFilename = $('#customFilename').val().trim();
-        if (customFilename) {
-            fileName = customFilename;
-        } else if (_fileName) {
-            fileName = _fileName;
-        } else {
-            fileName = GetFileName(_m3u8Url);
-        }
-        let originalExt = null;
-        if (/\.[a-zA-Z0-9]{1,4}$/.test(fileName)) {
-            fileName = fileName.split(".");
-            originalExt = fileName.pop();
-            fileName = fileName.join(".");
-        }
-        if (customFilename && originalExt) {
-            fileName += "." + originalExt;
-        } else {
-            fileName = fileName + "." + ext;
-        }
-        fileStream = await createStreamSaverNew(_fragments[0].url, fileName);
-        if (!fileStream) {
-            down.destroy();
-            $("#stopDownload").hide();
-            buttonState("#mergeTs", true);
-            initDownload();
-            return;
-        }
-    }
-
-    // 储存切片所需 DOM 提高性能
-    const itemDOM = new Map();
-
     // 数据预处理 切片数据伪装PNG 剔除PNG数据
-    document.querySelector("#dataPreprocessing").checked && down.use(function (buffer, fragment) {
+    opt.dataPreprocessing && down.use(function (buffer, fragment) {
         const view = new Uint8Array(buffer);
         const len = view.length;
         let tsStartIndex = -1;
@@ -1554,7 +918,7 @@ async function downloadNew(start = 0, end = _fragments.length) {
     down.use(function (buffer, fragment) {
         return new Promise(function (resolve, reject) {
             // 跳过解密 录制模式 切片不存在加密 跳过解密 直接返回
-            if (skipDecrypt || recorder || !fragment.encrypted || !fragment.decryptdata) {
+            if (recorder || !fragment.encrypted || !fragment.decryptdata) {
                 /**
                  * (!fragment.live || fragment.index == 0)
                  * 如果是直接下载直播流 只有第一个切片才会添加MAP 否则每个切片都添加MAP视频无法播放。
@@ -1590,9 +954,8 @@ async function downloadNew(start = 0, end = _fragments.length) {
     if (downSet.mp4 && !down.mapTag) {
         let tempBuffer = null;
         let head = true;
-        transmuxer = new muxjs.mp4.Transmuxer({ keepOriginalTimestamps: false, remux: !downSet.onlyAudio });    // mux.js 对象
+        transmuxer = new muxjs.mp4.Transmuxer({ keepOriginalTimestamps: false, remux: true });    // mux.js 对象
         transmuxer.on('data', function (segment) {
-            if (downSet.onlyAudio && segment.type != "audio") { return; }
             if (head) {
                 let data = new Uint8Array(segment.initSegment.byteLength + segment.data.byteLength);
                 data.set(segment.initSegment, 0);
@@ -1617,14 +980,6 @@ async function downloadNew(start = 0, end = _fragments.length) {
     down.on('downloadError', function (fragment, error) {
         $("#ForceDownload").show(); // 强制下载
         $("#errorDownload").show(); // 重下所有失败项
-
-        const item = itemDOM.get(fragment.index);
-        item.root.classList.add("error");
-        item.retryBtn.style.display = "inline";
-        item.stopBtn.style.display = "none";
-        item.root.scrollIntoView({ behavior: "smooth", block: "center" });
-        item.status = 3; // 下载失败
-
     });
     // 切片下载完成
     down.on('completed', function (buffer, fragment) {
@@ -1635,20 +990,9 @@ async function downloadNew(start = 0, end = _fragments.length) {
             return;
         }
 
-        const item = itemDOM.get(fragment.index);
-        item.root.style.setProperty("--m3u8-progress", "100%");
-        item.stopBtn.style.display = "none";
-        item.retryBtn.style.display = "none";
-        item.copyBtn.style.display = "inline";
-        item.status = 2; // 下载完成
-
         $progress.html(`${down.success}/${down.total}`);
         $fileSize.html(i18n.downloaded + ":" + byteToSize(down.buffersize));
         $fileDuration.html(i18n.downloadedVideoLength + ":" + secToTime(down.duration));
-
-        if (allOption.M3u8HideDownloadedSegments) {
-            item.root.style.display = "none";
-        }
     });
     // 全部下载完成
     down.on('allCompleted', async function (buffer) {
@@ -1669,14 +1013,6 @@ async function downloadNew(start = 0, end = _fragments.length) {
 
         buttonState("#mergeTs", true);
     });
-    // 单个项目下载进度
-    let lastEmitted = Date.now();
-    down.on('itemProgress', function (fragment, state, receivedLength, contentLength) {
-        if (Date.now() - lastEmitted >= 233) {
-            itemDOM.get(fragment.index).root.style.setProperty("--m3u8-progress", (receivedLength / contentLength * 100).toFixed(2) + "%");
-            lastEmitted = Date.now();
-        }
-    });
     if (fileStream) {
         let moofSeq = 1;
         down.on('sequentialPush', function (buffer) {
@@ -1689,59 +1025,8 @@ async function downloadNew(start = 0, end = _fragments.length) {
     down.on('error', function (error) {
         console.log(error);
     });
-    down.on('start', function (fragment, options) {
-        const item = itemDOM.get(fragment.index);
-        item.status = 1; // 下载中
-    });
     down.on('stop', function (fragment, error) {
         console.log(error);
-    });
-
-    // 缓存操作DOM
-    down.fragments.forEach((fragment) => {
-        const root = document.querySelector(`#media-item-${fragment.sn}`);
-        if (!root) { return; }
-
-        // 停止按钮
-        const stopBtn = document.createElement("img");
-        stopBtn.classList.add("icon", "stop");
-        stopBtn.src = "img/stop.svg";
-        stopBtn.title = i18n.stopDownload;
-        stopBtn.addEventListener("click", function (e) {
-            e.stopPropagation();
-            root.classList.remove("error");
-            down.stop(fragment.index);
-            down.downloader();
-            stopBtn.style.display = "none";
-            retryBtn.style.display = "inline";
-        });
-        root.appendChild(stopBtn);
-
-        // 重下按钮
-        const retryBtn = document.createElement("img");
-        retryBtn.classList.add("icon", "retry", "hide");
-        retryBtn.src = "img/retry.svg";
-        retryBtn.title = i18n.retryDownload;
-        retryBtn.addEventListener("click", function (e) {
-            e.stopPropagation();
-            root.classList.remove("error");
-            down.downloader(fragment);
-            stopBtn.style.display = "inline";
-            retryBtn.style.display = "none";
-        });
-        root.appendChild(retryBtn);
-
-        // 隐藏复制按钮
-        const copyBtn = root.querySelector(".copy");
-        copyBtn.style.display = "none";
-
-        itemDOM.set(fragment.index, {
-            root: document.querySelector(`#media-item-${fragment.sn}`),
-            stopBtn: stopBtn,
-            retryBtn: retryBtn,
-            copyBtn: copyBtn,
-            status: 0,  // 0:未下载 1:下载中 2:下载完成 3:下载失败
-        });
     });
 
     // 开始下载
@@ -1756,7 +1041,7 @@ async function downloadNew(start = 0, end = _fragments.length) {
     $("#errorDownload").off().click(function () {
         down.errorItem.forEach(function (fragment, index) {
             setTimeout(() => {
-                itemDOM.get(fragment.index)?.retryBtn.click();
+                down.downloader(fragment);
             }, index * 233);
         });
     });
@@ -1774,18 +1059,8 @@ async function downloadNew(start = 0, end = _fragments.length) {
             initDownload();
         }, 1000);
     });
-
-    // 隐藏下载成功的切片
-    $("#M3u8HideDownloadedSegments").off().click(function () {
-        itemDOM.forEach((item) => {
-            if (item.status == 2) {
-                item.root.style.display = this.checked ? "none" : "flex";
-            }
-        });
-        allOption.M3u8HideDownloadedSegments = this.checked;
-        chrome.storage.local.set(allOption);
-    });
 }
+
 function addInitSegmentData(buffer, initSegment) {
     let initSegmentData = initData.get(initSegment.url);
     if (!initSegmentData && initSegment.data) {
@@ -1838,7 +1113,7 @@ function mergeTsNew(down) {
         fileName = fileName.join(".");
     }
     // 发送到ffmpeg
-    if ($("#ffmpeg").prop("checked") || _ffmpeg || isSendFfmpeg) {
+    if (opt.ffmpeg || _ffmpeg) {
         /**
          * 大于1.8G 不使用ffmpeg直接下载
          * chrome每个进程限制2G内存 处理2G视频可能导致超过限制。1.8G是安全值。
@@ -1857,14 +1132,7 @@ function mergeTsNew(down) {
         } else {
             fileName = fileName + "." + ext;
         }
-        let action = $("#onlyAudio").prop("checked") ? "onlyAudio" : "transcode";
-        if (_ffmpeg) {
-            action = _ffmpeg;
-        }
-        if (isSendFfmpeg) {
-            action = "addFile";
-            isSendFfmpeg = false;
-        }
+        const action = _ffmpeg ?? "transcode";
         const data = {
             Message: "catCatchFFmpeg",
             action: action,
@@ -1882,29 +1150,6 @@ function mergeTsNew(down) {
             data.taskId = _taskId;
         }
 
-        // 使用iframe传输
-        if (G.iframeFFmpeg) {
-
-            // 转数据结构
-            const fileData = {
-                ...data,
-                data: fileBlob,
-                version: G.ffmpegConfig.version
-            };
-
-            if (_ffmpeg == "merge" && _isMaster != 1) {
-                channel.postMessage({
-                    Message: "mergeData",
-                    data: fileData
-                });
-                return;
-            }
-
-            document.querySelector("#onlineFFmpeg").style.display = "block";
-            createIframeFFmpeg(fileData);
-            showTab("#iframeBox");
-            return;
-        }
         chrome.runtime.sendMessage(data, function (response) {
             if (!chrome.runtime?.lastError && response && response == "ok") {
                 $progress.html(i18n.sendFfmpeg);
@@ -1924,7 +1169,7 @@ function apiDownload(fileBlob, fileName, ext) {
     chrome.downloads.download({
         url: URL.createObjectURL(fileBlob),
         filename: fileName + "." + ext,
-        saveAs: $("#saveAs").prop("checked")
+        saveAs: opt.saveAs
     }, function (downloadId) {
         if (downloadId) {
             downId = downloadId;
@@ -1947,75 +1192,14 @@ function initDownload() {
     // 转码工具初始化
     transmuxer = undefined;
     // 避免下载中途 更改设置 暂时储存下载配置
-    downSet.mp4 = $("#mp4").prop("checked");
-    downSet.onlyAudio = $("#onlyAudio").prop("checked");
-
-    // 恢复切片UI状态
-    const list = document.querySelector("#mediaList");
-    list.querySelectorAll(".media-item").forEach((item, index) => {
-        item.style.setProperty("--m3u8-progress", "0%");
-        item.classList.remove("error");
-        item.querySelector(".copy").style.display = "inline";
-        item.querySelector(".stop")?.remove();
-        item.querySelector(".retry")?.remove();
-    });
+    downSet.mp4 = opt.mp4;
 }
 
 // 流式下载
 function createStreamSaver(url) {
     streamSaver.mitm = G.streamSaverConfig.url;
-    const ext = $("#mp4").prop("checked") ? "mp4" : GetExt(url);
+    const ext = opt.mp4 ? "mp4" : GetExt(url);
     return streamSaver.createWriteStream(`${GetFileName(url)}.${ext}`).getWriter();
-}
-/**
- * 创建一个流式文件保存器
- * @returns {Promise<{write: function, close: function, abort: function}>}
- */
-async function createStreamSaverNew(url, fileName = null) {
-    try {
-        let suggestedName = fileName ?? GetFileName(url);
-        const handle = await window.showSaveFilePicker({
-            suggestedName: suggestedName
-        });
-
-        // 3. 创建可写流 (WritableStream)
-        const writableStream = await handle.createWritable();
-
-        let isClosed = false;
-
-        return {
-            /**
-             * 写入数据块
-             * @param {ArrayBuffer | Uint8Array | Blob} buffer - 要写入的数据
-             */
-            async write(buffer) {
-                if (isClosed) {
-                    throw new Error('流已经关闭或终止，无法写入数据');
-                }
-                await writableStream.write(buffer);
-            },
-
-            /**
-             * 关闭流，完成保存
-             */
-            async close() {
-                if (isClosed) return;
-                isClosed = true;
-                await writableStream.close();
-            },
-
-            /**
-             * 中断流，放弃保存并清理
-             */
-            async abort() {
-                if (isClosed) return;
-                isClosed = true;
-                await writableStream.abort(new Error('User aborted download'));
-            }
-        };
-    } catch (error) {
-        return false;
-    }
 }
 window.addEventListener('beforeunload', function () {
     fileStream && fileStream.abort();
@@ -2025,50 +1209,6 @@ window.onbeforeunload = function (event) {
         event.returnValue = i18n.streamOnbeforeunload;
     }
 }
-/**
- * 时间格式转为切片序号
- * @param {string} time
- * @returns {number}
- */
-function timeToIndex(time) {
-    let totalSeconds = time.split(":").reduce((acc, time) => 60 * acc + +time);
-    return _fragments.findIndex(fragment => (totalSeconds -= fragment.duration) < 0);
-}
-
-/**
- * 把所有切片地址写入页面
- * @param {Array} text 所有切片地址的对象数组
- */
-function writeText(text) {
-    if (!Array.isArray(text)) return;
-    document.querySelector("#mediaList").innerHTML = text.map((data, index) => `
-        <div class="media-item selected" data-index="${index}" data-number="${index + 1}" id="media-item-${data.sn}">
-            <span class="url-text" title="${data.url}">${data.url}</span>
-            <span class="media-tip"></span>
-            <img class="icon copy" src="img/copy.png"/>
-        </div>`).join('');
-}
-document.querySelector("#mediaList").addEventListener("click", (e) => {
-    const mediaItem = e.target.closest(".media-item");
-    if (!mediaItem) return;
-    const copyBtn = e.target.closest(".copy");
-    const urlText = mediaItem.querySelector(".url-text");
-    if (copyBtn) {
-        navigator.clipboard.writeText(urlText.textContent);
-        return;
-    }
-    // 双击展开/隐藏 多行url
-    if (e.detail === 2) {
-        document.querySelector("#mediaList").classList.toggle("expand-all");
-    }
-    if (document.querySelector("#mergeTs").classList.contains("no-drop")) {
-        return;
-    }
-    const idx = mediaItem.dataset.index;
-    _fragments[idx].selected = !_fragments[idx].selected;
-    mediaItem.classList.toggle("selected");
-});
-
 // 获取文件名不带扩展名
 function GetFileNameNoExt(url) {
     url = GetFile(url);
@@ -2145,36 +1285,6 @@ function ArrayBufferToBase64(buffer) {
         binary += String.fromCharCode(bytes[i]);
     }
     return btoa(binary);
-}
-// Base64 转 ArrayBuffer
-function Base64ToArrayBuffer(base64) {
-    let binary_string = atob(base64);
-    let len = binary_string.length;
-    let bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-        bytes[i] = binary_string.charCodeAt(i);
-    }
-    return bytes.buffer;
-}
-// 字符串 转 ArrayBuffer
-function StringToArrayBuffer(str) {
-    let bytes = new Uint8Array(str.length);
-    for (let i = 0; i < str.length; i++) {
-        bytes[i] = str.charCodeAt(i);
-    }
-    return bytes.buffer;
-}
-// 16进制字符串 转 ArrayBuffer
-function HexStringToArrayBuffer(hex) {
-    let typedArray = new Uint8Array(hex.match(/[\da-f]{2}/gi).map(function (h) {
-        return parseInt(h, 16)
-    }));
-    return typedArray.buffer
-}
-// 字符串 转 Uint8Array
-function StringToUint8Array(str) {
-    str = str.replace("0x", "");
-    return new Uint8Array(HexStringToArrayBuffer(str));
 }
 /**
  * 修正 moof 序号
@@ -2256,9 +1366,6 @@ function fixFileDuration(data, duration) {
     }
     return data;
 }
-function isHexKey(str) {
-    return /^[0-9a-fA-F]{32}$/.test(str);
-}
 // m3u8文件内容加入bashUrl
 function addBashUrl(baseUrl, m3u8Text) {
     let m3u8_split = m3u8Text.split("\n");
@@ -2286,14 +1393,6 @@ function highlight() {
     });
 }
 
-// 显示面板
-function showTab(Obj) {
-    const panels = ["#iframeBox", "#m3u8Content", "#video", "#mediaList"];
-    panels.forEach(sel => {
-        sel === Obj ? $(sel).show() : $(sel).hide();
-    });
-}
-
 function autoMerge() {
     if (!autoDown) { return; }
     clearTimeout(autoMergeTimer);
@@ -2303,44 +1402,11 @@ function autoMerge() {
     }, 1000);
 }
 
-function createIframeFFmpeg(fileData) {
-    if (!iframeFFmpeg) {
-        iframeFFmpeg = document.createElement('iframe');
-        iframeFFmpeg.allow = "fullscreen";
-        document.querySelector("#iframeBox").appendChild(iframeFFmpeg);
-        iframeFFmpeg.onload = function () {
-            iframeFFmpegReady = true;
-            fileData && iframeFFmpeg.contentWindow.postMessage(fileData, '*');
-            $progress.html(i18n.sendFfmpeg);
-        };
-        // iframeFFmpeg.src = G.ffmpegConfig.url + '?_=' + new Date().getTime();
-        iframeFFmpeg.src = G.ffmpegConfig.url + '?_=iframe';
-    } else if (iframeFFmpegReady) {
-        fileData && iframeFFmpeg.contentWindow.postMessage(fileData, '*');
-        $progress.html(i18n.sendFfmpeg);
-    } else {
-        const timer = setInterval(() => {
-            if (iframeFFmpegReady) {
-                fileData && iframeFFmpeg.contentWindow.postMessage(fileData, '*');
-                $progress.html(i18n.sendFfmpeg);
-                clearInterval(timer);
-            } else {
-                iframeFFmpegReadyRetryCount++;
-                if (iframeFFmpegReadyRetryCount > 10) {
-                    clearInterval(timer);
-                    $progress.html(i18n.ffmpegIsNotReady);
-                }
-            }
-        }, 2000);
-    }
-}
-
 // 接收 catCatchFFmpegResult
 chrome.runtime.onMessage.addListener(function (Message, sender, sendResponse) {
-    // if (!Message.Message || Message.Message != "catCatchFFmpegResult" || Message.state != "ok" || currentTabId == 0 || Message.tabId != currentTabId || G.iframeFFmpeg) { return; }
     if (!Message.Message || Message.Message != "catCatchFFmpegResult" || Message.state != "done" || currentTabId == 0 || Message.tabId != currentTabId) { return; }
     setTimeout(() => {
         $progress.html(i18n.downloadComplete);
-        $("#autoClose").prop("checked") && closeTab();
+        opt.autoClose && closeTab();
     }, 1000);
 });

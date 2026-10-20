@@ -78,99 +78,12 @@
         <!-- 提示窗口 -->
         <div class="block" id="tips"></div>
 
-        <!-- 疑似密钥 -->
-        <div class="block hide" id="maybeKey">
-          <select class="m3u8Key select">
-            <option value="tips" data-i18n="possibleKey"></option>
-          </select>
-          <button id="searchingForRealKey" data-i18n="searchingForRealKey"></button>
-        </div>
-
         <!-- 视频信息 -->
         <div class="videoInfo flex">
           <div id="count"></div>
           <div id="info"></div>
           <div id="estimateFileSize"></div>
           <div id="estimateBitrate"></div>
-        </div>
-
-        <!-- 切片列表和部分操作按钮 可折叠 -->
-        <div class="block" id="textarea">
-          <details>
-            <!-- 折叠按钮 -->
-            <summary data-i18n="viewSlices" class="button"></summary>
-            <!-- m3u8原始内容 -->
-            <textarea id="m3u8Content" spellcheck="false" data-type="link" class="width100 hide"
-              data-i18n="loading"></textarea>
-            <!-- 切片列表 -->
-            <div id="mediaList" class="width100" data-i18n="loading"></div>
-            <!-- 下载列表 已弃用 -->
-            <div id="downList" data-i18n="waitDownload"></div>
-            <!-- 在线ffmpeg -->
-            <div class="iframeBox" id="iframeBox"></div>
-            <!-- 视频预览 -->
-            <video id="video" class="hide" controls></video>
-
-            <!-- 操作按钮 -->
-            <div class="merge">
-              <!-- 预览播放 -->
-              <button id="play" data-switch="on" data-i18n="play"></button>
-              <!-- 原始m3u8 -->
-              <button id="originalM3U8" data-i18n="originalM3u8"></button>
-              <!-- 切片列表 -->
-              <button id="getTs" data-i18n="segmentList"></button>
-              <!-- 在线ffmpeg -->
-              <button id="onlineFFmpeg" data-i18n="onlineFFmpeg"></button>
-
-              <!-- 密钥 -->
-              <div class="dl-container">
-                <div class="m3u8Popup" id="openKeyBox">
-                  <div class="customKey">
-                    <input type="text" id="customKey" spellcheck="false" data-i18n-placeholder="customKeyPlaceholder"
-                      size="60" />
-                    <input type="text" id="customIV" spellcheck="false" placeholder="IV" size="30" />
-                    <button id="uploadKey" data-i18n="uploadKey"></button>
-                    <input id="uploadKeyFile" type="file" class="hide" />
-                  </div>
-                </div>
-                <button id="openKey" class="button" data-i18n="key"></button>
-              </div>
-
-              <!-- 更多功能 -->
-              <div class="dl-container">
-                <div class="m3u8Popup" id="moreFeaturesBox">
-                  <button id="downText" data-i18n="downloadSegmentList"></button>
-                  <button id="tsAddArg" data-i18n="getParameters"></button>
-                  <button id="setRequestHeaders" data-i18n="setRequestHeaders"></button>
-                  <button id="sendFfmpeg" class="hide button" data-i18n="sendFfmpeg"></button>
-                  <label class="inline-flex textColor">
-                    <input type="checkbox" id="M3u8HideDownloadedSegments" save="change" />
-                    <i18n>hideDownloadedSegments</i18n>
-                  </label>
-                  <p>
-                    <input type="text" data-i18n-placeholder="regularFilterPlaceholder" id="regular"
-                      class="m3u8Regular">
-                    <button id="invertSelection" data-i18n="invertSelection"></button>
-                  </p>
-                </div>
-                <button id="moreFeatures" data-i18n="moreFeatures"></button>
-              </div>
-
-              <!-- 下载范围 -->
-              <div class="rangeDown textColor">
-                <p data-i18n="downloadRange"></p>
-                <select id="cc" class="hide">
-                  <option disabled selected hidden>playlist</option>
-                </select>
-                <div class="merge">
-                  <input type="text" id="rangeStart" spellcheck="false" data-i18n-placeholder="start" value="1" />
-                  <input type="text" id="rangeEnd" spellcheck="false" data-i18n-placeholder="end" />
-                </div>
-                <button id="rangeConfirm" data-i18n="confirm"></button>
-              </div>
-
-            </div>
-          </details>
         </div>
 
         <div class="line"></div>
@@ -183,52 +96,6 @@
             <input type="text" id="customFilename" spellcheck="false" data-i18n-placeholder="customSaveFileName"
               size="30" list="name-options" />
             <datalist id="name-options"></datalist>
-            <!-- 下载线程 -->
-            <div id="threadDiv" class="textColor">
-              <p data-i18n-outer="downloadThreads"></p> <input type="number" value="6" id="thread" spellcheck="false"
-                style="width: 35px;" step="1" min="1" max="256" save="change" />
-            </div>
-            <!-- 使用在线ffmpeg转码 -->
-            <label class="m3u8checkbox textColor">
-              <p data-i18n-outer="ffmpegTranscoding"></p><input type="checkbox" id="ffmpeg" save="change" />
-            </label>
-            <!-- 转为mp4格式 -->
-            <label class="m3u8checkbox textColor">
-              <p data-i18n-outer="mp4Format"></p><input type="checkbox" id="mp4" save="change" />
-            </label>
-            <!-- 边下边纯 -->
-            <label class="m3u8checkbox textColor firefoxHide">
-              <p data-i18n-outer="downloadWhileSaving"></p><input type="checkbox" id="StreamSaver" save="change" />
-            </label>
-            <!-- 边下边纯 测试新版 -->
-            <label class="m3u8checkbox textColor firefoxHide">
-              <i18n>downloadWhileSaving</i18n>
-              <i18n>test</i18n>
-              <input type="checkbox" id="StreamTest" save="change" />
-            </label>
-            <!-- 提取音频 -->
-            <label class="m3u8checkbox textColor">
-              <p data-i18n-outer="audioOnly"></p><input type="checkbox" id="onlyAudio" save="change" />
-            </label>
-            <!-- 另存为 -->
-            <label class="m3u8checkbox textColor">
-              <p data-i18n-outer="saveAs"></p><input type="checkbox" id="saveAs" save="change" />
-            </label>
-            <!-- 预处理 -->
-            <label class="m3u8checkbox textColor">
-              <p data-i18n-outer="dataPreprocessing"></p><input type="checkbox" id="dataPreprocessing" save="change" />
-            </label>
-            <!-- 跳过解密 -->
-            <div id="skipDecryptDiv" class="hide">
-              <label class="m3u8checkbox textColor">
-                <p data-i18n-outer="skipDecryption"></p><input type="checkbox" id="skipDecrypt" save="change" />
-              </label>
-            </div>
-            <!-- 下载完自动关闭页面 -->
-            <label class="m3u8checkbox textColor">
-              <p data-i18n-outer="autoClosePageAfterDownload"></p><input type="checkbox" id="autoClose" save="change" />
-            </label>
-
           </div>
 
           <!-- 下载进度提示 -->
@@ -255,11 +122,6 @@
             <!-- 录制 -->
             <button id="recorder" class="button2 hide" data-switch="on" data-switch="on"
               data-i18n="recordLive"></button>
-            <!-- 重试次数 -->
-            <div class="textColor m3u8checkbox">
-              <p data-i18n-outer="retryCount"></p>(test) <input type="number" value="0" id="retryCount"
-                spellcheck="false" style="width: 35px;" step="1" min="0" />
-            </div>
           </div>
         </div>
 

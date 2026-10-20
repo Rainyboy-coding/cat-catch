@@ -13,9 +13,6 @@ let _index = null;  // 当前页面 tab index
 // 是否表单提交下载 表单提交 不使用自定义文件名
 const downloadData = localStorage.getItem('downloadData') ? JSON.parse(localStorage.getItem('downloadData')) : [];
 
-let iframeFFmpeg = null; // iframe FFmpeg窗口对象
-let iframeFFmpegReady = false; // iframe FFmpeg是否准备就绪
-
 if (_JSON) {
     _data.push(_JSON);
 }
@@ -79,33 +76,13 @@ awaitG(() => {
     });
 });
 
-const createIframeFFmpeg = (callback) => {
-    if (!iframeFFmpeg) {
-        iframeFFmpeg = document.createElement('iframe');
-        document.querySelector("#iframeBox").appendChild(iframeFFmpeg);
-        iframeFFmpeg.onload = function () {
-            iframeFFmpegReady = true;
-            callback && callback();
-        };
-        iframeFFmpeg.src = G.ffmpegConfig.url + '?_=iframe';
-    }
-    return iframeFFmpeg;
-}
-
 function start() {
-    // 提前打开ffmpeg页面
-    if (_ffmpeg && G.iframeFFmpeg) {
-        createIframeFFmpeg();
-    }
-
-    $("#autoClose").prop("checked", _autoClose || G.downAutoClose);
+    const autoClose = _autoClose || G.downAutoClose;  // 下载完成后自动关闭页面
     streamSaver.mitm = G.streamSaverConfig.url;
 
     const $downBox = $("#downBox"); // 下载列表容器
     const down = new Downloader(_data);  // 创建下载器 
     const itemDOM = new Map();  // 提前储存需要平凡操作的dom对象 提高效率
-
-    $("#test").click(() => console.log(down));
 
     // 添加html
     const addHtml = (fragment) => {
@@ -233,7 +210,7 @@ function start() {
         $("#stopDownload").hide();
 
         // 检查 down.fragments 是否都为边下边存 检查自动关闭
-        if (down.fragments.every(item => item.fileStream) && $("#autoClose").prop("checked")) {
+        if (down.fragments.every(item => item.fileStream) && autoClose) {
             setTimeout(() => {
                 closeTab();
             }, Math.ceil(Math.random() * 999));
@@ -347,7 +324,7 @@ function start() {
 
         // 全部发送完成 检查自动关闭
         if (down.success == down.total && Message.state == "done") {
-            if ($("#autoClose").prop("checked")) {
+            if (autoClose) {
                 setTimeout(() => {
                     closeTab();
                 }, 1000);
@@ -371,7 +348,7 @@ function start() {
         // 完成下载 检查自动关闭
         if (down.success == down.total) {
             document.title = i18n.downloadComplete;
-            if ($("#autoClose").prop("checked")) {
+            if (autoClose) {
                 setTimeout(() => {
                     closeTab();
                 }, 1000);
@@ -405,33 +382,6 @@ function sendFile(action, data, fragment) {
     // 转 blob
     if (data instanceof ArrayBuffer) {
         data = ArrayBufferToBlob(data, { type: fragment.contentType });
-    }
-
-    // 嵌套在线ffmpeg模式
-    if (G.iframeFFmpeg) {
-        document.querySelector("#iframeBox").style.display = "block";
-        const baseData = {
-            action: action,
-            title: stringModify(fragment.title),
-            tabId: _tabId,
-            data: data,
-            version: G.ffmpegConfig.version,
-            index: fragment.index,
-        };
-        if (action === "merge") {
-            baseData.taskId = _taskId;
-            baseData.quantity = _data.length;
-        }
-        if (!iframeFFmpeg) {
-            createIframeFFmpeg(() => {
-                iframeFFmpeg.contentWindow.postMessage(baseData, '*');
-            });
-        } else if (iframeFFmpegReady) {
-            iframeFFmpeg.contentWindow.postMessage(baseData, '*');
-        } else {
-            setTimeout(sendFile, 500, action, data, fragment);
-        }
-        return;
     }
 
     chrome.tabs.query({ url: G.ffmpegConfig.url + "*" }, function (tabs) {

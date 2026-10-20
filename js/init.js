@@ -93,15 +93,6 @@ G.OptionLists = {
 
     badgeNumber: true,  // 显示数字徽章
 
-    // m3u8解析器默认参数
-    M3u8Thread: 6,
-    M3u8Mp4: true,
-    M3u8OnlyAudio: false,
-    M3u8SkipDecrypt: false,
-    M3u8StreamSaver: true,
-    M3u8Ffmpeg: false,
-    M3u8AutoClose: false,
-
     // 第三方服务地址
     onlineServiceAddress: 0,
     chromeLimitSize: 1.8 * 1024 * 1024 * 1024,
@@ -120,9 +111,7 @@ G.OptionLists = {
 };
 
 // 本地储存的配置
-G.LocalVar = {
-    M3u8HideDownloadedSegments: true, // m3u8下载完成后隐藏已下载的切片
-};
+G.LocalVar = {};
 
 // 102版本以上 非Firefox 开启更多功能
 G.isFirefox = navigator.userAgent.includes('Firefox') && (typeof browser !== 'undefined' && !!browser.runtime?.getBrowserInfo);
