@@ -99,7 +99,6 @@ class Template {
             fullFileName: data.fullFileName ?? "",
             fileName: data.fileName ?? "",
             ext: data.ext ?? "",
-            mobileUserAgent: G.MobileUserAgent,
             userAgent: G.userAgent || navigator.userAgent,
             br: "\n",
         };
@@ -244,7 +243,7 @@ class Template {
     static _evalTag(tag, data, trimData) {
         let value;
         if (tag.varName === 'data') {
-            const { pageDOM, year, month, date, day, fullDate, time, hours, minutes, seconds, mobileUserAgent, br, ...rest } = trimData;
+            const { pageDOM, year, month, date, day, fullDate, time, hours, minutes, seconds, br, ...rest } = trimData;
             value = JSON.stringify(rest);
         } else {
             value = data[tag.varName];

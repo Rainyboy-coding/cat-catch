@@ -37,9 +37,6 @@
   ],
   "commands": {
     "_execute_browser_action": {},
-    "catch": {
-      "description": "__MSG_cacheCapture__"
-    },
     "m3u8": {
       "description": "__MSG_m3u8Parser__"
     },

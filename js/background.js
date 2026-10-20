@@ -378,23 +378,14 @@ chrome.runtime.onMessage.addListener(function (Message, sender, sendResponse) {
     }
     /**
      * 获取各按钮状态
-     * 模拟手机 以及各种脚本状态
+     * 各种脚本状态
      */
     if (Message.Message == "getButtonState") {
-        let state = {
-            MobileUserAgent: G.featMobileTabId.has(Message.tabId),
-        }
+        let state = {};
         G.scriptList.forEach(function (item, key) {
             state[item.key] = item.tabId.has(Message.tabId);
         });
         sendResponse(state);
-        return true;
-    }
-    // 对tabId的标签 进行模拟手机操作
-    if (Message.Message == "mobileUserAgent") {
-        mobileUserAgent(Message.tabId, !G.featMobileTabId.has(Message.tabId));
-        chrome.tabs.reload(Message.tabId, { bypassCache: true });
-        sendResponse("ok");
         return true;
     }
     // 对tabId的标签 脚本注入或删除
@@ -422,26 +413,13 @@ chrome.runtime.onMessage.addListener(function (Message, sender, sendResponse) {
         if (refresh) {
             chrome.tabs.reload(Message.tabId, { bypassCache: true });
         } else {
-            const files = [`catch-script/${Message.script}`];
-            script.i18n && files.unshift("catch-script/i18n.js");
             chrome.scripting.executeScript({
                 target: { tabId: Message.tabId, allFrames: script.allFrames },
-                files: files,
+                files: [`catch-script/${Message.script}`],
                 injectImmediately: true,
                 world: script.world
             });
         }
-        sendResponse("ok");
-        return true;
-    }
-    // 脚本注入 脚本申请多语言文件
-    if (Message.Message == "scriptI18n") {
-        chrome.scripting.executeScript({
-            target: { tabId: Message.tabId, allFrames: true },
-            files: ["catch-script/i18n.js"],
-            injectImmediately: true,
-            world: "MAIN"
-        });
         sendResponse("ok");
         return true;
     }
@@ -648,28 +626,13 @@ chrome.webNavigation.onCommitted.addListener(function (details) {
     G.scriptList.forEach(function (item, script) {
         if (!item.tabId.has(details.tabId) || !item.allFrames) { return true; }
 
-        const files = [`catch-script/${script}`];
-        item.i18n && files.unshift("catch-script/i18n.js");
         chrome.scripting.executeScript({
             target: { tabId: details.tabId, frameIds: [details.frameId] },
-            files: files,
+            files: [`catch-script/${script}`],
             injectImmediately: true,
             world: item.world
         });
     });
-
-    // 模拟手机
-    if (G.initLocalComplete && G.featMobileTabId.size > 0 && G.featMobileTabId.has(details.tabId)) {
-        chrome.scripting.executeScript({
-            args: [G.MobileUserAgent.toString()],
-            target: { tabId: details.tabId, frameIds: [details.frameId] },
-            func: function () {
-                Object.defineProperty(navigator, 'userAgent', { value: arguments[0], writable: false });
-            },
-            injectImmediately: true,
-            world: "MAIN"
-        });
-    }
 });
 
 /**
@@ -688,11 +651,7 @@ chrome.tabs.onRemoved.addListener(function (tabId) {
 
 // 快捷键
 const runCommands = (command) => {
-    if (command == "catch") {
-        const scriptTabid = G.scriptList.get("catch.js").tabId;
-        scriptTabid.has(G.tabId) ? scriptTabid.delete(G.tabId) : scriptTabid.add(G.tabId);
-        chrome.tabs.reload(G.tabId, { bypassCache: true });
-    } else if (command == "m3u8") {
+    if (command == "m3u8") {
         chrome.tabs.create({ url: "m3u8.html" });
     } else if (command == "clear") {
         delete cacheData[G.tabId];
@@ -888,37 +847,6 @@ function SetIcon(obj) {
     }
 }
 
-// 模拟手机端
-function mobileUserAgent(tabId, change = false) {
-    if (change) {
-        G.featMobileTabId.add(tabId);
-        (chrome.storage.session ?? chrome.storage.local).set({ featMobileTabId: Array.from(G.featMobileTabId) });
-        chrome.declarativeNetRequest.updateSessionRules({
-            removeRuleIds: [tabId],
-            addRules: [{
-                "id": tabId,
-                "action": {
-                    "type": "modifyHeaders",
-                    "requestHeaders": [{
-                        "header": "User-Agent",
-                        "operation": "set",
-                        "value": G.MobileUserAgent
-                    }]
-                },
-                "condition": {
-                    "tabIds": [tabId],
-                    "resourceTypes": Object.values(chrome.declarativeNetRequest.ResourceType)
-                }
-            }]
-        });
-        return true;
-    }
-    G.featMobileTabId.delete(tabId) && (chrome.storage.session ?? chrome.storage.local).set({ featMobileTabId: Array.from(G.featMobileTabId) });
-    chrome.declarativeNetRequest.updateSessionRules({
-        removeRuleIds: [tabId]
-    });
-}
-
 // 判断特殊页面
 function isSpecialPage(url) {
     if (!url || url == "null") { return true; }
@@ -960,15 +888,12 @@ function clearRedundant() {
 
         if (!G.initLocalComplete) { return; }
 
-        // 清理 declarativeNetRequest 模拟手机
+        // 清理 declarativeNetRequest 规则
         chrome.declarativeNetRequest.getSessionRules(function (rules) {
-            let mobileFlag = false;
             for (let item of rules) {
                 if (item.condition.tabIds) {
                     // 如果tabIds列表都不存在 则删除该条规则
                     if (!item.condition.tabIds.some(id => allTabId.has(id))) {
-                        mobileFlag = true;
-                        item.condition.tabIds.forEach(id => G.featMobileTabId.delete(id));
                         chrome.declarativeNetRequest.updateSessionRules({
                             removeRuleIds: [item.id]
                         });
@@ -978,7 +903,6 @@ function clearRedundant() {
                     chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: [1] });
                 }
             }
-            mobileFlag && (chrome.storage.session ?? chrome.storage.local).set({ featMobileTabId: Array.from(G.featMobileTabId) });
         });
         G.blockUrlSet = new Set([...G.blockUrlSet].filter(x => allTabId.has(x)));
         G.damnUrlSet = new Set([...G.damnUrlSet].filter(x => allTabId.has(x)));

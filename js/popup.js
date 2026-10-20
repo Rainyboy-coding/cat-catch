@@ -42,8 +42,6 @@ chrome.downloads.onChanged.addListener(function (item) {
     delete downData[item.id];
   }
 });
-// 复选框状态 点击返回或者全选后 影响新加入的资源 复选框勾选状态
-let checkboxState = true;
 
 // 生成资源DOM
 function AddMedia(data, currentTab = true) {
@@ -242,7 +240,7 @@ function AddMedia(data, currentTab = true) {
     return false;
   });
   // 多选框 创建checked属性 值和checked状态绑定
-  data._checked = checkboxState;
+  data._checked = true;
   data.html.find(".DownCheck").prop("checked", data._checked);
   data.html.find('input').click(function (event) {
     data._checked = this.checked;
@@ -326,14 +324,6 @@ $mergeDown.click(function () {
   }
   catDownload(checkedData, { ffmpeg: "merge" })
 });
-// 反选
-$('#invertSelection').click(function () {
-  checkboxState = !checkboxState;
-  getData().forEach(function (data) {
-    data.checked = !data.checked;
-  });
-  mergeDownButton();
-});
 // 清空数据
 $('#Clear').click(function () {
   chrome.runtime.sendMessage({ Message: "clearData", tabId: G.tabId, type: activeTab });
@@ -348,14 +338,7 @@ $('#Clear').click(function () {
   allData.get(activeTab).clear();
   UItoggle();
 });
-// 模拟手机端
-$("#MobileUserAgent").click(function () {
-  chrome.runtime.sendMessage({ Message: "mobileUserAgent", tabId: G.tabId }, function () {
-    G.refreshClear && $('#Clear').click();
-    updateButton();
-  });
-});
-// 深度搜索 缓存捕捉 注入脚本
+// 深度搜索 注入脚本
 $("[type='script']").click(function () {
   chrome.runtime.sendMessage({ Message: "script", tabId: G.tabId, script: this.id + ".js" }, function () {
     G.autoClearMode > 0 && $('#Clear').click();
@@ -526,7 +509,7 @@ const interval = setInterval(async function () {
       return true;
     }
   });
-  // 获取模拟手机 捕获 状态
+  // 获取深度搜索状态
   updateButton();
 
   loadCSS();
@@ -551,10 +534,6 @@ function updateButton() {
   chrome.runtime.sendMessage({ Message: "getButtonState", tabId: G.tabId }, function (state) {
     for (let key in state) {
       const $DOM = $(`#${key}`);
-      if (key == "MobileUserAgent") {
-        $DOM.html(state.MobileUserAgent ? i18n.closeSimulation : i18n.simulateMobile);
-        continue;
-      }
       const script = G.scriptList.get(key + ".js");
       $DOM.html(state[key] ? script.off : script.name);
     }

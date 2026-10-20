@@ -80,7 +80,6 @@ G.OptionLists = {
     ],
     TitleName: false,   // 使用自定义文件名保存文件(默认为网页标题)
     ShowWebIco: !G.isMobile,    // 显示网页图标
-    MobileUserAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",   // 模拟手机浏览器UA
 
     autoClearMode: 1,   // 清理模式 0:不清理 1:正常清理 2:更频繁
     catDownload: false, // 始终不启用猫抓下载器
@@ -122,8 +121,6 @@ G.OptionLists = {
 
 // 本地储存的配置
 G.LocalVar = {
-    featMobileTabId: [],
-
     M3u8HideDownloadedSegments: true, // m3u8下载完成后隐藏已下载的切片
 };
 
@@ -134,8 +131,7 @@ G.version = G.version && G.version[2] ? parseInt(G.version[2]) : 93;
 
 // 脚本列表
 G.scriptList = new Map();
-G.scriptList.set("search.js", { key: "search", refresh: true, allFrames: true, world: "MAIN", name: i18n.deepSearch, off: i18n.closeSearch, i18n: false, tabId: new Set() });
-G.scriptList.set("catch.js", { key: "catch", refresh: true, allFrames: true, world: "MAIN", name: i18n.cacheCapture, off: i18n.closeCapture, i18n: true, tabId: new Set() });
+G.scriptList.set("search.js", { key: "search", refresh: true, allFrames: true, world: "MAIN", name: i18n.deepSearch, off: i18n.closeSearch, tabId: new Set() });
 // ffmpeg
 G.ffmpegConfig = {
     tab: 0,
@@ -229,7 +225,6 @@ function InitOptions() {
     });
     // 读取local配置数据 交给全局变量G
     (chrome.storage.session ?? chrome.storage.local).get(G.LocalVar, function (items) {
-        items.featMobileTabId = new Set(items.featMobileTabId);
         G = { ...items, ...G };
         G.initLocalComplete = true;
     });
@@ -276,10 +271,6 @@ chrome.storage.onChanged.addListener(function (changes, namespace) {
             G.blockUrl = newValue.map(item => {
                 return { url: wildcardToRegex(item.url), state: item.state }
             });
-            continue;
-        }
-        if (key == "featMobileTabId") {
-            G[key] = new Set(newValue);
             continue;
         }
         if (key == "sidePanel" && !G.isFirefox) {
