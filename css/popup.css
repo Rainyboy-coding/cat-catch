@@ -90,7 +90,17 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 2rem;
+  min-height: 2rem;
+}
+#noDataTip {
+  text-align: center;
+  color: var(--text2-color);
+  background: var(--background-color-two);
+  padding: 10px;
+  margin-bottom: 1px;
+}
+#noDataTip button {
+  margin: 8px 4px 0 4px;
 }
 #TipsFixed {
   position: fixed;
@@ -106,34 +116,8 @@ button,
   padding: 3px 3px 3px 3px;
   /* font-size: 0.9rem; */
 }
-.Tabs {
-  display: flex;
-}
-.TabButton {
-  text-align: center;
-  border: solid 1px #c7c7c700;
-  color: var(--text2-color);
-  border-radius: 5px 5px 0 0;
-  cursor: pointer;
-  width: 50%;
-  /* display: flex; */
-  padding: 3px;
-  margin: 1px 2px 0 2px;
-  flex-direction: row;
-  align-items: baseline;
-  justify-content: center;
-  user-select: none;
-}
 .flex {
   display: flex;
-}
-.TabButton.Active {
-  background-color: var(--background-color-two);
-  border-bottom-color: transparent;
-  font-weight: bold;
-}
-.TabButton.Active div {
-  font-weight: bold;
 }
 .DownCheck {
   margin: 0 2px 0 0;

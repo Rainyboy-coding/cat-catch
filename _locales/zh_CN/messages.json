@@ -170,6 +170,12 @@
   "noData": {
     "message": "还没闻到味儿~"
   },
+  "noDataTip": {
+    "message": "没找到视频。可以先播放一下视频，或者刷新页面。"
+  },
+  "reloadPage": {
+    "message": "刷新页面"
+  },
   "regularFilterPlaceholder": {
     "message": "正则筛选 匹配资源url 回车确认"
   },

@@ -19,10 +19,6 @@
   "minimum_chrome_version": "93",
   "name": "__MSG_catCatch__",
   "homepage_url": "https://github.com/xifangczy/cat-catch",
-  "options_ui": {
-    "page": "options.html",
-    "open_in_tab": true
-  },
   "permissions": [
     "tabs",
     "webRequest",
@@ -31,7 +27,6 @@
     "webNavigation",
     "alarms",
     "declarativeNetRequest",
-    "scripting",
     "sidePanel"
   ],
   "commands": {
@@ -44,9 +39,6 @@
     },
     "reboot": {
       "description": "__MSG_restartExtension__"
-    },
-    "deepSearch": {
-      "description": "__MSG_deepSearch__"
     }
   },
   "host_permissions": [

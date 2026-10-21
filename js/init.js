@@ -100,7 +100,6 @@ G.OptionLists = {
     blockUrlWhite: false,
     maxLength: G.isMobile ? 999 : 9999,
     sidePanel: false,   // 侧边栏
-    deepSearch: false, // 常开深度搜索
 
     damn: false,    // 强制屏蔽网站开关
 
@@ -118,9 +117,6 @@ G.isFirefox = navigator.userAgent.includes('Firefox') && (typeof browser !== 'un
 G.version = navigator.userAgent.match(/(Chrome|Firefox)\/([\d]+)/);
 G.version = G.version && G.version[2] ? parseInt(G.version[2]) : 93;
 
-// 脚本列表
-G.scriptList = new Map();
-G.scriptList.set("search.js", { key: "search", refresh: true, allFrames: true, world: "MAIN", name: i18n.deepSearch, off: i18n.closeSearch, tabId: new Set() });
 // ffmpeg
 G.ffmpegConfig = {
     tab: 0,
@@ -154,17 +150,8 @@ function InitOptions() {
         }
         cacheData = items.MediaData;
     });
-    // 读取sync配置数据 交给全局变量G
-    chrome.storage.sync.get(G.OptionLists, function (items) {
-        if (chrome.runtime.lastError) {
-            items = G.OptionLists;
-        }
-        // 确保有默认值
-        for (let key in G.OptionLists) {
-            if (items[key] === undefined || items[key] === null) {
-                items[key] = G.OptionLists[key];
-            }
-        }
+    // 配置全部使用默认值 交给全局变量G
+    (function (items) {
         // Ext的Array转为Map类型 如果是范围 增加min max属性
         items.Ext = new Map(items.Ext.map(item => {
             if (item.operator === undefined) { item.operator = ">="; }
@@ -211,7 +198,7 @@ function InitOptions() {
             }
         });
         G.initSyncComplete = true;
-    });
+    })(structuredClone(G.OptionLists));
     // 读取local配置数据 交给全局变量G
     (chrome.storage.session ?? chrome.storage.local).get(G.LocalVar, function (items) {
         G = { ...items, ...G };

@@ -680,38 +680,6 @@ a.json-placeholder:hover {
   margin: 0;
 }
 
-/** 导航条 **/
-.sidebar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 10rem;
-  height: 100%;
-  padding: 10px;
-  background-color: var(--background-color-two);
-  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
-  overflow-y: auto;
-  text-align: center;
-  margin-right: 0;
-}
-.sidebar ul {
-  list-style-type: none;
-  padding: 0;
-}
-.sidebar li {
-  margin: 10px 0;
-}
-.sidebar a {
-  text-decoration: none;
-  color: var(--text-color);
-  display: block;
-  padding: 5px;
-  border-radius: 4px;
-}
-.sidebar a:hover {
-  background-color: var(--button-hover-color);
-}
-
 .item .send2localType {
   margin-right: 196px;
 }

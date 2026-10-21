@@ -5,24 +5,14 @@ const _tabId = parseInt(params.get("tabId"));
 // 当前页面
 const $mediaList = $('#mediaList');
 const $current = $("<div></div>");
-const $currentCount = $("#currentTab #quantity");
 let currentCount = 0;
-// 其他页面
-const $allMediaList = $('#allMediaList');
-const $all = $("<div></div>");
-const $allCount = $("#allTab #quantity");
-let allCount = 0;
 // 提示 操作按钮 DOM
 const $tips = $("#Tips");
 const $down = $("#down");
 const $mergeDown = $("#mergeDown");
+const $noDataTip = $("#noDataTip");
 // 储存所有资源数据
-const allData = new Map([
-  [true, new Map()],  // 当前页面
-  [false, new Map()]  // 其他页面
-]);
-// 当前所在页面
-let activeTab = true;
+const allData = new Map();
 // 储存下载id
 const downData = [];
 // 图标地址
@@ -44,7 +34,7 @@ chrome.downloads.onChanged.addListener(function (item) {
 });
 
 // 生成资源DOM
-function AddMedia(data, currentTab = true) {
+function AddMedia(data) {
   data._title = data.title;
   data.title = stringModify(data.title);
   //文件名
@@ -81,7 +71,7 @@ function AddMedia(data, currentTab = true) {
   }
   data.isPlay = isPlay(data);
 
-  if (allData.get(currentTab).has(data.requestId)) {
+  if (allData.has(data.requestId)) {
     data.requestId = data.requestId + "_" + Date.now().toString();
   }
 
@@ -257,36 +247,12 @@ function AddMedia(data, currentTab = true) {
     }
   });
   // 使用Map 储存数据
-  allData.get(currentTab).set(data.requestId, data);
+  allData.set(data.requestId, data);
 
   return data.html;
 }
 
 /********************绑定事件********************/
-//标签切换
-$(".Tabs .TabButton").click(function () {
-  activeTab = this.id == "currentTab";
-  const index = $(this).index();
-  $(".Tabs .TabButton").removeClass('Active');
-  $(this).addClass("Active");
-  $(".container").removeClass("TabShow").eq(index).addClass("TabShow");
-  UItoggle();
-});
-// 其他页面
-$('#allTab').click(function () {
-  !allCount && chrome.runtime.sendMessage(chrome.runtime.id, { Message: "getAllData" }, function (data) {
-    if (!data) { return; }
-    for (let key in data) {
-      if (key == G.tabId) { continue; }
-      allCount += data[key].length;
-      for (let i = 0; i < data[key].length; i++) {
-        $all[G.reverse ? 'prepend' : 'append'](AddMedia(data[key][i], false));
-      }
-    }
-    allCount && $allMediaList.append($all);
-    UItoggle();
-  });
-});
 // 下载选中文件
 $('#DownFile').click(function () {
   const [checkedData, maxSize] = getCheckedData();
@@ -326,41 +292,24 @@ $mergeDown.click(function () {
 });
 // 清空数据
 $('#Clear').click(function () {
-  chrome.runtime.sendMessage({ Message: "clearData", tabId: G.tabId, type: activeTab });
-  chrome.runtime.sendMessage({ Message: "ClearIcon", type: activeTab, tabId: G.tabId });
-  if (activeTab) {
-    currentCount = 0;
-    $current.empty();
-  } else {
-    allCount = 0;
-    $all.empty();
-  }
-  allData.get(activeTab).clear();
+  chrome.runtime.sendMessage({ Message: "clearData", tabId: G.tabId });
+  chrome.runtime.sendMessage({ Message: "ClearIcon", type: true, tabId: G.tabId });
+  currentCount = 0;
+  $current.empty();
+  allData.clear();
   UItoggle();
 });
-// 深度搜索 注入脚本
-$("[type='script']").click(function () {
-  chrome.runtime.sendMessage({ Message: "script", tabId: G.tabId, script: this.id + ".js" }, function () {
+// 刷新页面
+$("#reloadPage").click(function () {
+  chrome.tabs.reload(G.tabId, { bypassCache: true }, function () {
     G.autoClearMode > 0 && $('#Clear').click();
-    updateButton();
   });
 });
-// 102以上开启 捕获按钮/注入脚本
-if (G.version >= 102) {
-  $("[type='script']").show();
-}
 // Firefox 关闭一些功能 修复右边滚动条遮挡
 if (G.isFirefox) {
   $("body").addClass("fixFirefoxRight");
   $(".firefoxHide").each(function () { $(this).hide(); });
-  if (G.version < 128) {
-    $(".firefoxHideScript").each(function () { $(this).hide(); });
-  }
 }
-// 跳转页面
-$("[go]").click(function () {
-  chrome.tabs.create({ url: this.getAttribute("go") });
-});
 async function getPageDOM() {
   try {
     const result = await new Promise((resolve, reject) => {
@@ -401,8 +350,7 @@ const interval = setInterval(async function () {
   // 填充数据
   chrome.runtime.sendMessage(chrome.runtime.id, { Message: "getData", tabId: G.tabId }, function (data) {
     if (!data || data === "OK") {
-      $tips.html(i18n.noData);
-      $tips.attr("data-i18n", "noData");
+      UItoggle();
       return;
     }
     currentCount = data.length;
@@ -494,24 +442,16 @@ const interval = setInterval(async function () {
     if (!Message.Message || !Message.data) { return; }
     // 添加资源
     if (Message.Message == "popupAddData") {
-      const html = AddMedia(Message.data, Message.data.tabId == G.tabId);
       if (Message.data.tabId == G.tabId) {
         !currentCount && $mediaList.append($current);
         currentCount++;
-        $current[G.reverse ? 'prepend' : 'append'](html);
-        UItoggle();
-      } else if (allCount) {
-        allCount++;
-        $all[G.reverse ? 'prepend' : 'append'](html);
+        $current[G.reverse ? 'prepend' : 'append'](AddMedia(Message.data));
         UItoggle();
       }
       sendResponse("OK");
       return true;
     }
   });
-  // 获取深度搜索状态
-  updateButton();
-
   loadCSS();
 
   const observer = new MutationObserver(updateDownHeight);
@@ -529,16 +469,6 @@ window.addEventListener('beforeunload', function () {
   chrome.runtime.sendMessage(chrome.runtime.id, { Message: "clearRedundant" });
 });
 
-// 按钮状态更新
-function updateButton() {
-  chrome.runtime.sendMessage({ Message: "getButtonState", tabId: G.tabId }, function (state) {
-    for (let key in state) {
-      const $DOM = $(`#${key}`);
-      const script = G.scriptList.get(key + ".js");
-      $DOM.html(state[key] ? script.off : script.name);
-    }
-  });
-}
 /* 格式判断 */
 function isPlay(data) {
   const typeArray = ['video/ogg', 'video/mp4', 'video/webm', 'audio/ogg', 'audio/mp3', 'audio/wav', 'audio/m4a', 'video/3gp', 'video/mpeg', 'video/mov'];
@@ -621,16 +551,9 @@ function Tips(text, delay = 200) {
 */
 function UItoggle() {
   const size = getData().size;
-  size > 0 ? $tips.hide() : $tips.show().html(i18n.noData);
-  $currentCount.text(currentCount ? `[${currentCount}]` : "");
-  $allCount.text(allCount ? `[${allCount}]` : "");
-  const id = $('.TabShow').attr("id");
-  if (id != "mediaList" && id != "allMediaList") {
-    $tips.hide();
-    $down.hide();
-  } else if ($down.is(":hidden")) {
-    $down.show();
-  }
+  // 当前页面没有资源时 提示刷新页面
+  $tips.hide();
+  $noDataTip.toggle(size == 0);
   // 更新图标
   $(".faviconFlag").each(function () {
     const data = getData(this.getAttribute("requestId"));
@@ -673,19 +596,12 @@ function getCheckedData() {
   });
   return [checkedData, maxSize];
 }
-// 获取当前标签的资源列表 存在requestId返回该资源
+// 获取资源列表 存在requestId返回该资源
 function getData(requestId = false) {
   if (requestId) {
-    return allData.get(activeTab).get(requestId);
+    return allData.get(requestId);
   }
-  return allData.get(activeTab);
-}
-// 获取所有资源列表
-function getAllData() {
-  const data = [];
-  data.push(...allData.get(true).values());
-  data.push(...allData.get(false).values());
-  return data;
+  return allData;
 }
 
 // 更新底部按钮高度

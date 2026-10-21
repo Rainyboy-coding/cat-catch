@@ -170,6 +170,12 @@
   "noData": {
     "message": "還沒聞到味兒~"
   },
+  "noDataTip": {
+    "message": "沒找到影片。可以先播放一下影片，或者重新整理頁面。"
+  },
+  "reloadPage": {
+    "message": "重新整理頁面"
+  },
   "regularFilterPlaceholder": {
     "message": "正規篩選 匹配資源url 回車確認"
   },

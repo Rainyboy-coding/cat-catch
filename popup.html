@@ -15,29 +15,20 @@
 </head>
 
 <body class="popupBody">
-  <div class="Tabs">
-    <div id="currentTab" class="TabButton flex Active" title="Current Page">
-      <span data-i18n-outer="currentPage"></span>
-      <div id="quantity"></div>
-    </div>
-    <div id="allTab" class="TabButton flex" title="Other Pages">
-      <span data-i18n-outer="otherPage"></span>
-      <div id="quantity"></div>
-    </div>
-  </div>
   <div id="Tips" data-i18n="loadingData">
   </div>
   <div id="TipsFixed">~</div>
+  <!-- 没有资源时 提示刷新页面 -->
+  <div id="noDataTip" class="hide">
+    <div data-i18n="noDataTip"></div>
+    <button id="reloadPage" class="button2" data-i18n="reloadPage"></button>
+  </div>
   <div id="mediaList" class="container hide TabShow"></div>
-  <div id="allMediaList" class="container hide"></div>
   <div id="down">
+    <button id="DownFile" data-i18n="download" title="Download selected items"></button>
     <button id="mergeDown" class="button2" data-i18n="onlineMerge" disabled
       title="Merge selected items for download"></button>
-    <button id="DownFile" data-i18n="download" title="Download selected items"></button>
     <button id="Clear" data-i18n="clear" title="Clear all items"></button>
-    <button id="search" class="button2 hide firefoxHideScript" type="script" data-i18n="deepSearch"
-      title="Perform deep search"></button>
-    <button id="Options" go="options.html" class="button2" data-i18n="settings" title="Open settings"></button>
   </div>
   <script src="js/popup-utils.js"></script>
   <script src="js/popup.js"></script>

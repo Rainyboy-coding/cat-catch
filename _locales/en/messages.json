@@ -170,6 +170,12 @@
   "noData": {
     "message": "No Fish"
   },
+  "noDataTip": {
+    "message": "No video found. Try playing the video first, or reload the page."
+  },
+  "reloadPage": {
+    "message": "Reload page"
+  },
   "regularFilterPlaceholder": {
     "message": "Filter resource URLs using a regular expression. Press Enter to apply."
   },

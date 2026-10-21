@@ -1,12 +1,6 @@
 (function () {
-    var _key = new Set();
-    var m3u8Text = new Map();
     chrome.runtime.onMessage.addListener(function (Message, sender, sendResponse) {
         if (chrome.runtime.lastError) { return; }
-        if (Message.Message == "getKey") {
-            sendResponse(Array.from(_key));
-            return true;
-        }
         if (Message.Message == "ffmpeg") {
             if (!Message.files) {
                 window.postMessage(Message);
@@ -40,14 +34,6 @@
             sendResponse(document.documentElement.outerHTML);
             return true;
         }
-        if (Message.Message == "getM3u8Text") {
-            if (Message.url && m3u8Text.has(Message.url)) {
-                sendResponse(m3u8Text.get(Message.url));
-                return true;
-            }
-            sendResponse("");
-            return true;
-        }
         if (Message.Message == "getM3u8Cache") {
             fetch(Message.url, { method: "GET", cache: "force-cache" })
                 .then(response => response.text())
@@ -67,50 +53,12 @@
     }
     connect();
 
-    const isFirefox = navigator.userAgent.includes('Firefox');
-    const sendAddMedia = (data) => {
-        chrome.runtime.sendMessage({
-            Message: "addMedia",
-            url: data.url,
-            href: data.href ?? location.href,
-            extraExt: data.ext,
-            mime: data.mime,
-            requestHeaders: { referer: data.referer },
-            requestId: data.requestId
-        });
-    };
     window.addEventListener("message", (event) => {
-        const action = ["catCatchAddMedia", "catCatchAddKey", "catCatchFFmpeg", "catCatchFFmpegResult", "catCatchCloseScript"];
+        const action = ["catCatchFFmpeg", "catCatchFFmpegResult"];
         if (!event.data || !event.data.action || event.origin !== window.location.origin || !action.includes(event.data.action)) { return; }
         event.stopPropagation();
         event.stopImmediatePropagation();
 
-        if (event.data.action == "catCatchAddMedia") {
-            if (!event.data.url) { return; }
-
-            /*
-             * firefox 不允许直接下载跨域blob内容
-             * fetch获取文本内容并缓存到m3u8Text中，供 m3u8.html调用获取。
-             */
-            if (event.data.url.startsWith("blob:") && isFirefox) {
-                fetch(event.data.url)
-                    .then(response => response.text())
-                    .then(text => {
-                        m3u8Text.set(event.data.url, text);
-                        sendAddMedia(event.data);
-                    });
-                return;
-            }
-            sendAddMedia(event.data);
-        }
-        if (event.data.action == "catCatchAddKey") {
-            let key = event.data.key;
-            if (key instanceof ArrayBuffer || key instanceof Array) {
-                key = ArrayToBase64(key);
-            }
-            if (_key.has(key)) { return; }
-            _key.add(key);
-        }
         if (event.data.action == "catCatchFFmpeg") {
             if (!event.data.use ||
                 !event.data.files ||
@@ -132,26 +80,5 @@
             if (!event.data.state || !event.data.tabId) { return; }
             chrome.runtime.sendMessage({ Message: "catCatchFFmpegResult", ...event.data });
         }
-        if (event.data.action == "catCatchCloseScript") {
-            if (!event.data.script || !event.isTrusted) { return; }
-            chrome.runtime.sendMessage({ Message: "closeScript", ...event.data });
-        }
-
     }, { capture: true });
-
-    function ArrayToBase64(data) {
-        try {
-            let bytes = new Uint8Array(data);
-            let binary = "";
-            for (let i = 0; i < bytes.byteLength; i++) {
-                binary += String.fromCharCode(bytes[i]);
-            }
-            if (typeof _btoa == "function") {
-                return _btoa(binary);
-            }
-            return btoa(binary);
-        } catch (e) {
-            return false;
-        }
-    }
 })();

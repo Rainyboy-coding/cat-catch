@@ -21,10 +21,6 @@
   "manifest_version": 3,
   "name": "__MSG_catCatch__",
   "homepage_url": "https://github.com/xifangczy/cat-catch",
-  "options_ui": {
-    "page": "options.html",
-    "open_in_tab": true
-  },
   "permissions": [
     "tabs",
     "webRequest",
@@ -32,7 +28,6 @@
     "storage",
     "webNavigation",
     "alarms",
-    "scripting",
     "declarativeNetRequest"
   ],
   "commands": {
@@ -45,9 +40,6 @@
     },
     "reboot": {
       "description": "__MSG_restartExtension__"
-    },
-    "deepSearch": {
-      "description": "__MSG_deepSearch__"
     }
   },
   "browser_specific_settings": {

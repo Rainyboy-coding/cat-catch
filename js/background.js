@@ -33,7 +33,6 @@ let debounceCount = 0;
 let debounceTime = 0;
 const reFilename = /filename="?([^"]+)"?/;
 
-G.deepSearchTemporarilyClose = null; // 深度搜索临时变量
 G.urlMap = new Map();   // url查重map
 G.requestHeaders = new Map();   // 临时储存请求头
 G.blackList = new Set();    // 正则屏蔽资源列表
@@ -334,10 +333,6 @@ chrome.runtime.onMessage.addListener(function (Message, sender, sendResponse) {
         return true;
     }
     // 获取所有数据
-    if (Message.Message == "getAllData") {
-        sendResponse(cacheData);
-        return true;
-    }
     /**
      * 设置扩展图标数字
      * 提供 type 删除标签为 tabId 的数字
@@ -376,53 +371,6 @@ chrome.runtime.onMessage.addListener(function (Message, sender, sendResponse) {
         sendResponse(cacheData[Message.tabId]);
         return true;
     }
-    /**
-     * 获取各按钮状态
-     * 各种脚本状态
-     */
-    if (Message.Message == "getButtonState") {
-        let state = {};
-        G.scriptList.forEach(function (item, key) {
-            state[item.key] = item.tabId.has(Message.tabId);
-        });
-        sendResponse(state);
-        return true;
-    }
-    // 对tabId的标签 脚本注入或删除
-    if (Message.Message == "script") {
-        if (G.damn && G.damnUrlSet.has(Message.tabId)) {
-            return;
-        }
-        if (!G.scriptList.has(Message.script)) {
-            sendResponse("error no exists");
-            return false;
-        }
-        const script = G.scriptList.get(Message.script);
-        const scriptTabid = script.tabId;
-        const refresh = Message.refresh ?? script.refresh;
-        if (scriptTabid.has(Message.tabId)) {
-            scriptTabid.delete(Message.tabId);
-            if (Message.script == "search.js") {
-                G.deepSearchTemporarilyClose = Message.tabId;
-            }
-            refresh && chrome.tabs.reload(Message.tabId, { bypassCache: true });
-            sendResponse("ok");
-            return true;
-        }
-        scriptTabid.add(Message.tabId);
-        if (refresh) {
-            chrome.tabs.reload(Message.tabId, { bypassCache: true });
-        } else {
-            chrome.scripting.executeScript({
-                target: { tabId: Message.tabId, allFrames: script.allFrames },
-                files: [`catch-script/${Message.script}`],
-                injectImmediately: true,
-                world: script.world
-            });
-        }
-        sendResponse("ok");
-        return true;
-    }
     // Heart Beat
     if (Message.Message == "HeartBeat") {
         chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
@@ -433,21 +381,9 @@ chrome.runtime.onMessage.addListener(function (Message, sender, sendResponse) {
         sendResponse("HeartBeat OK");
         return true;
     }
-    // 清理数据
+    // 清理当前标签数据
     if (Message.Message == "clearData") {
-        // 当前标签
-        if (Message.type) {
-            delete cacheData[Message.tabId];
-            (chrome.storage.session ?? chrome.storage.local).set({ MediaData: cacheData });
-            clearRedundant();
-            sendResponse("OK");
-            return true;
-        }
-        // 其他标签
-        for (let item in cacheData) {
-            if (item == Message.tabId) { continue; }
-            delete cacheData[item];
-        }
+        delete cacheData[Message.tabId];
         (chrome.storage.session ?? chrome.storage.local).set({ MediaData: cacheData });
         clearRedundant();
         sendResponse("OK");
@@ -457,20 +393,6 @@ chrome.runtime.onMessage.addListener(function (Message, sender, sendResponse) {
     if (Message.Message == "clearRedundant") {
         clearRedundant();
         sendResponse("OK");
-        return true;
-    }
-    // 从 content-script 或 catch-script 传来的媒体url
-    if (Message.Message == "addMedia") {
-        chrome.tabs.query({}, function (tabs) {
-            for (let item of tabs) {
-                if (item.url == Message.href) {
-                    findMedia({ url: Message.url, tabId: item.id, extraExt: Message.extraExt, mime: Message.mime, requestId: Message.requestId, requestHeaders: Message.requestHeaders }, true, true);
-                    return true;
-                }
-            }
-            findMedia({ url: Message.url, tabId: -1, extraExt: Message.extraExt, mime: Message.mime, requestId: Message.requestId, initiator: Message.href, requestHeaders: Message.requestHeaders }, true, true);
-        });
-        sendResponse("ok");
         return true;
     }
     // ffmpeg网页通信
@@ -497,19 +419,6 @@ chrome.runtime.onMessage.addListener(function (Message, sender, sendResponse) {
     }
     if (Message.Message == "damnUrlHas") {
         sendResponse(G.damnUrlSet.has(Message.tabId));
-        return true;
-    }
-    if (Message.Message == "closeScript") {
-        if (!Message.script || !G.scriptList.has(Message.script)) {
-            sendResponse("error");
-            return false;
-        }
-        const script = G.scriptList.get(Message.script);
-        const scriptTabid = script.tabId;
-        if (scriptTabid.has(Message.tabId)) {
-            scriptTabid.delete(Message.tabId);
-        }
-        sendResponse("ok");
         return true;
     }
 });
@@ -613,26 +522,6 @@ chrome.webNavigation.onCommitted.addListener(function (details) {
         (chrome.storage.session ?? chrome.storage.local).set({ MediaData: cacheData });
         SetIcon({ tabId: details.tabId });
     }
-
-    // chrome内核版本 102 以下不支持 chrome.scripting.executeScript API
-    if (G.version < 102) { return; }
-
-    if (!G.blockUrlSet.has(details.tabId) && G.deepSearch && G.deepSearchTemporarilyClose != details.tabId) {
-        G.scriptList.get("search.js").tabId.add(details.tabId);
-        G.deepSearchTemporarilyClose = null;
-    }
-
-    // catch-script 脚本
-    G.scriptList.forEach(function (item, script) {
-        if (!item.tabId.has(details.tabId) || !item.allFrames) { return true; }
-
-        chrome.scripting.executeScript({
-            target: { tabId: details.tabId, frameIds: [details.frameId] },
-            files: [`catch-script/${script}`],
-            injectImmediately: true,
-            world: item.world
-        });
-    });
 });
 
 /**
@@ -660,17 +549,6 @@ const runCommands = (command) => {
         SetIcon({ tabId: G.tabId });
     } else if (command == "reboot") {
         chrome.runtime.reload();
-    } else if (command == "deepSearch") {
-        const script = G.scriptList.get("search.js");
-        const scriptTabid = script.tabId;
-        if (scriptTabid.has(G.tabId)) {
-            scriptTabid.delete(G.tabId);
-            G.deepSearchTemporarilyClose = G.tabId;
-            chrome.tabs.reload(G.tabId, { bypassCache: true });
-            return;
-        }
-        scriptTabid.add(G.tabId);
-        chrome.tabs.reload(G.tabId, { bypassCache: true });
     }
 }
 /**
@@ -875,15 +753,6 @@ function clearRedundant() {
         // 清理
         G.urlMap.forEach((_, key) => {
             !allTabId.has(key) && G.urlMap.delete(key);
-        });
-
-        // 清理脚本
-        G.scriptList.forEach(function (scriptList) {
-            scriptList.tabId.forEach(function (tabId) {
-                if (!allTabId.has(tabId)) {
-                    scriptList.tabId.delete(tabId);
-                }
-            });
         });
 
         if (!G.initLocalComplete) { return; }
