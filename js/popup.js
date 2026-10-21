@@ -291,18 +291,18 @@ $mergeDown.click(function () {
   catDownload(checkedData, { ffmpeg: "merge" })
 });
 // 清空数据
-$('#Clear').click(function () {
+function clearData() {
   chrome.runtime.sendMessage({ Message: "clearData", tabId: G.tabId });
   chrome.runtime.sendMessage({ Message: "ClearIcon", type: true, tabId: G.tabId });
   currentCount = 0;
   $current.empty();
   allData.clear();
   UItoggle();
-});
+}
 // 刷新页面
 $("#reloadPage").click(function () {
   chrome.tabs.reload(G.tabId, { bypassCache: true }, function () {
-    G.autoClearMode > 0 && $('#Clear').click();
+    G.autoClearMode > 0 && clearData();
   });
 });
 // Firefox 关闭一些功能 修复右边滚动条遮挡
